@@ -1,0 +1,16 @@
+:root { --bg:#fafafa; --card:#fff; --ink:#111; --muted:#666; --brand:#c41212; }
+*{ box-sizing:border-box; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+body{ margin:0; background:var(--bg); color:var(--ink); }
+header{ padding:14px; background:var(--brand); color:#fff; }
+h1{ margin:0 0 10px; font-size:18px; }
+main{ padding:14px; display:grid; gap:12px; max-width:960px; margin:0 auto; }
+.row{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px; }
+label{ display:grid; gap:6px; font-size:13px; }
+input,select,textarea,button{ padding:10px; border:1px solid #ddd; border-radius:10px; font-size:14px; }
+button{ background:#111; color:#fff; border:none; cursor:pointer; }
+.card{ background:var(--card); border:1px solid #e5e5e5; border-radius:14px; padding:12px; }
+.issues{ margin:0; padding-left:18px; }
+.status{ margin-top:10px; color:var(--muted); }
+@media (max-width: 800px){
+  .row{ grid-template-columns: 1fr; }
+}
