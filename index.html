@@ -6,62 +6,57 @@
   <title>Decatur Fire — Checks (Alpha)</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/styles.css">
+  <meta name="theme-color" content="#c41212">
 </head>
 <body>
-  <header>
-    <h1>Decatur Fire — Checks (Alpha)</h1>
+  <header class="header">
+    <h1>Decatur Fire — Station 1 Checks (Alpha)</h1>
+
     <div class="row">
-      <label>Completed By
+      <label>
+        Completed By
         <input id="who" placeholder="Name" autocomplete="name">
       </label>
 
-      <label>Station
-        <select id="station">
-          <option value="1">Station 1</option>
-        </select>
+      <label>
+        Station
+        <select id="station"></select>
       </label>
 
-      <label>Rig
-        <select id="rig"></select>
+      <label>
+        Apparatus
+        <select id="apparatus"></select>
+      </label>
+
+      <label>
+        Check Type
+        <select id="checkType"></select>
       </label>
     </div>
   </header>
 
-  <main>
+  <main class="main">
     <section class="card">
       <h2>Active Issues</h2>
       <ul id="activeIssues" class="issues"></ul>
     </section>
 
     <section class="card">
-      <h2>New Issue (emails only if filled)</h2>
-      <label>Issue
+      <h2>New Issue (email only if filled + new)</h2>
+      <label>
+        Issue
         <textarea id="newIssue" rows="3" placeholder="Describe the issue..."></textarea>
       </label>
-      <label>Note (shows as bullet note)
-        <input id="newIssueNote" placeholder="Short note (optional)">
+      <label>
+        Bullet Note (shown next to issue)
+        <input id="newIssueNote" placeholder="Optional note">
       </label>
-    </section>
-
-    <section class="card">
-      <h2>Check Type</h2>
-      <select id="checkType">
-        <option value="apparatusDaily">Apparatus Daily</option>
-        <option value="medicalDaily">Medical Daily</option>
-        <option value="scbaWeekly">SCBA Weekly</option>
-        <option value="pumpWeekly">Pump Weekly</option>
-        <option value="aerialWeekly">Aerial Weekly</option>
-        <option value="sawWeekly">Saws Weekly</option>
-        <option value="batteriesWeekly">Batteries Weekly</option>
-        <option value="oosUnit">Out of Service — Unit</option>
-        <option value="oosEquipment">Out of Service — Equipment</option>
-      </select>
     </section>
 
     <section class="card">
       <h2>Form</h2>
       <div id="formArea"></div>
-      <button id="saveBtn">Save</button>
+      <button id="saveBtn" class="btn">Save</button>
       <div id="status" class="status"></div>
     </section>
   </main>
