@@ -1,19 +1,55 @@
-const CACHE = "dfd-checks-alpha-v2";
-const ASSETS = ["/", "/index.html", "/styles.css", "/app.js", "/manifest.webmanifest"];
+// service-worker.js — Decatur Fire PWA
 
-self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+const CACHE_VERSION = "v1.0.0"; // <-- bump this when you deploy changes
+const CACHE_NAME = `dfd-checks-${CACHE_VERSION}`;
+
+const ASSETS = [
+  "/",
+  "/index.html",
+  "/styles.css",
+  "/app.js",
+  "/manifest.webmanifest"
+];
+
+self.addEventListener("install", (event) => {
+  // Activate updated SW immediately
+  self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
+  );
 });
 
-self.addEventListener("fetch", (e) => {
-  const url = new URL(e.request.url);
+self.addEventListener("activate", (event) => {
+  // Delete old caches
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : null)))
+    )
+  );
+  // Take control immediately
+  self.clients.claim();
+});
 
-  // App shell cache-first
-  if (ASSETS.includes(url.pathname)) {
-    e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
+self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+
+  // Never cache API calls
+  if (url.pathname.startsWith("/api")) return;
+
+  // Always fetch fresh HTML (prevents stale UI shell)
+  const accept = event.request.headers.get("accept") || "";
+  if (accept.includes("text/html")) {
+    event.respondWith(fetch(event.request));
     return;
   }
 
-  // Always network for API
-  if (url.pathname.startsWith("/api")) return;
+  // Cache-first for app assets (JS/CSS/manifest)
+  if (ASSETS.includes(url.pathname)) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => cached || fetch(event.request))
+    );
+    return;
+  }
+
+  // Default: network
 });
