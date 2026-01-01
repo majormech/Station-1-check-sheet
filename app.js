@@ -1,19 +1,25 @@
+// app.js — Decatur Fire Checks (Alpha) — matches UPDATED Code.gs (apparatusId / getApparatus)
+// NO API keys
+
 const api = {
   async getConfig() {
     return fetchJson(`/api?action=getConfig`);
   },
-  async getRigs(stationId) {
-    const q = new URLSearchParams({ action: "getRigs", stationId: stationId || "1" });
+
+  async getApparatus(stationId) {
+    const q = new URLSearchParams({ action: "getApparatus", stationId: stationId || "1" });
     return fetchJson(`/api?${q.toString()}`);
   },
+
   async getActiveIssues(stationId, apparatusId) {
     const q = new URLSearchParams({
       action: "getActiveIssues",
       stationId: stationId || "1",
-      rigId: apparatusId || ""
+      apparatusId: apparatusId || ""
     });
     return fetchJson(`/api?${q.toString()}`);
   },
+
   async saveCheck(payload) {
     return fetchJson(`/api`, { method: "POST", body: JSON.stringify(payload) });
   }
@@ -33,7 +39,7 @@ const el = {
 };
 
 let runtime = null;
-let rigsByStation = {};
+let apparatusByStation = {};
 
 const CHECK_TYPES_MASTER = [
   { value: "apparatusDaily", label: "Apparatus Daily" },
@@ -47,52 +53,60 @@ const CHECK_TYPES_MASTER = [
   { value: "oosEquipment", label: "Out of Service — Equipment" }
 ];
 
-init();
+init().catch(err => {
+  el.status.textContent = `Init error: ${err.message || err}`;
+});
 
 async function init() {
   el.status.textContent = "Loading…";
 
-  runtime = (await api.getConfig()).config;
+  const conf = await api.getConfig();
+  runtime = conf.config || {};
 
-  // Station list (alpha: station 1 only, but selector is ready)
-  const stations = runtime?.stations || [{ stationId: "1", stationName: "Station 1" }];
+  // Stations
+  const stations = runtime.stations || [{ stationId: "1", stationName: "Station 1" }];
   el.station.innerHTML = stations
     .map(s => `<option value="${esc(s.stationId)}">${esc(s.stationName)}</option>`)
     .join("");
 
-  // Default station
+  // Restore station & name
   const savedStation = localStorage.getItem("dfd_station") || runtime.stationIdDefault || "1";
   el.station.value = savedStation;
 
-  // Completed By persistence
   const savedWho = localStorage.getItem("dfd_who");
   if (savedWho) el.who.value = savedWho;
 
   el.who.addEventListener("change", () => localStorage.setItem("dfd_who", el.who.value.trim()));
-  el.station.addEventListener("change", async () => {
-    localStorage.setItem("dfd_station", el.station.value);
-    await loadRigsForStation();
-    await refreshIssues();
-    renderForm();
-    updateCheckTypeOptions();
-  });
 
-  el.apparatus.addEventListener("change", async () => {
-    renderForm();
-    updateCheckTypeOptions();
-    await refreshIssues();
-  });
-
-  el.checkType.addEventListener("change", () => renderForm());
-  el.saveBtn.addEventListener("click", onSave);
-
-  // Fill check type dropdown first (options refined later)
+  // Base check types
   el.checkType.innerHTML = CHECK_TYPES_MASTER
     .map(x => `<option value="${esc(x.value)}">${esc(x.label)}</option>`)
     .join("");
 
-  await loadRigsForStation();
+  // Event handlers
+  el.station.addEventListener("change", async () => {
+    localStorage.setItem("dfd_station", el.station.value);
+    await loadApparatusForStation();
+    updateCheckTypeOptions();
+    renderForm();
+    await refreshIssues();
+  });
 
+  el.apparatus.addEventListener("change", async () => {
+    localStorage.setItem(`dfd_apparatus_${el.station.value}`, el.apparatus.value);
+    updateCheckTypeOptions();
+    renderForm();
+    await refreshIssues();
+  });
+
+  el.checkType.addEventListener("change", () => {
+    renderForm();
+  });
+
+  el.saveBtn.addEventListener("click", onSave);
+
+  // Initial load
+  await loadApparatusForStation();
   updateCheckTypeOptions();
   renderForm();
   await refreshIssues();
@@ -100,31 +114,29 @@ async function init() {
   el.status.textContent = "Ready.";
 }
 
-async function loadRigsForStation() {
+async function loadApparatusForStation() {
   const stationId = el.station.value || "1";
 
-  // Fetch rigs for this station
-  const rigsResp = await api.getRigs(stationId);
-  const rigs = Array.isArray(rigsResp?.rigs) ? rigsResp.rigs : [];
-  rigsByStation[stationId] = rigs;
+  const resp = await api.getApparatus(stationId);
+  const apparatus = Array.isArray(resp?.apparatus) ? resp.apparatus : [];
 
-  if (!rigs.length) {
+  apparatusByStation[stationId] = apparatus;
+
+  if (!apparatus.length) {
     el.apparatus.innerHTML = "";
     el.status.textContent = "No apparatus returned from API.";
     return;
   }
 
-  el.apparatus.innerHTML = rigs
-    .map(r => `<option value="${esc(r.rigId)}">${esc(r.rigName || r.rigId)}</option>`)
+  el.apparatus.innerHTML = apparatus
+    .map(a => `<option value="${esc(a.apparatusId)}">${esc(a.apparatusName || a.apparatusId)}</option>`)
     .join("");
 
-  // Restore last apparatus if valid
-  const savedApp = localStorage.getItem(`dfd_apparatus_${stationId}`);
-  if (savedApp && rigs.some(r => r.rigId === savedApp)) el.apparatus.value = savedApp;
-
-  el.apparatus.addEventListener("change", () => {
-    localStorage.setItem(`dfd_apparatus_${stationId}`, el.apparatus.value);
-  }, { once: true });
+  // restore apparatus if valid
+  const saved = localStorage.getItem(`dfd_apparatus_${stationId}`);
+  if (saved && apparatus.some(a => a.apparatusId === saved)) {
+    el.apparatus.value = saved;
+  }
 }
 
 async function refreshIssues() {
@@ -136,7 +148,7 @@ async function refreshIssues() {
 
   el.issues.innerHTML = issues.length
     ? issues.map(i =>
-        `<li>• <b>${esc(i.rigId || "")}</b> — ${esc(i.issueText || "")}` +
+        `<li>• <b>${esc(i.apparatusId || "")}</b> — ${esc(i.issueText || "")}` +
         (i.note ? ` — <i>${esc(i.note)}</i>` : "") +
         `</li>`
       ).join("")
@@ -146,11 +158,15 @@ async function refreshIssues() {
 function updateCheckTypeOptions() {
   const a = el.apparatus.value || "";
 
+  // Aerial visible only for Trucks or E-5
   const allowAerial = a.startsWith("T-") || a === "E-5";
-  const allowSaws = a !== "E-1";
-  const allowPump = a === "E-1" || a === "T-1" || a === "E-5"; // safe rule
 
-  // Rebuild options with filtering
+  // Saws hidden for E-1
+  const allowSaws = a !== "E-1";
+
+  // Pump safe rule (edit if you want tighter)
+  const allowPump = a === "E-1" || a === "T-1" || a === "E-5";
+
   const filtered = CHECK_TYPES_MASTER.filter(ct => {
     if (ct.value === "aerialWeekly") return allowAerial;
     if (ct.value === "sawWeekly") return allowSaws;
@@ -163,12 +179,7 @@ function updateCheckTypeOptions() {
     .map(x => `<option value="${esc(x.value)}">${esc(x.label)}</option>`)
     .join("");
 
-  // Keep current if still allowed
-  if (filtered.some(x => x.value === current)) {
-    el.checkType.value = current;
-  } else {
-    el.checkType.value = "apparatusDaily";
-  }
+  el.checkType.value = filtered.some(x => x.value === current) ? current : "apparatusDaily";
 }
 
 function renderForm() {
@@ -193,12 +204,12 @@ async function onSave() {
   try {
     el.status.textContent = "Saving…";
 
-    const submitter = el.who.value.trim();
+    const submitter = (el.who.value || "").trim();
     const stationId = el.station.value || "1";
-    const rigId = el.apparatus.value;
+    const apparatusId = el.apparatus.value || "";
 
     if (!submitter) return (el.status.textContent = "Enter Completed By.");
-    if (!rigId) return (el.status.textContent = "Select an apparatus.");
+    if (!apparatusId) return (el.status.textContent = "Select an apparatus.");
 
     const checkType = el.checkType.value;
     const checkPayload = readForm(checkType);
@@ -206,7 +217,7 @@ async function onSave() {
     const payload = {
       action: "saveCheck",
       stationId,
-      rigId,
+      apparatusId,
       submitter,
       checkType,
       checkPayload,
@@ -221,6 +232,7 @@ async function onSave() {
     el.newIssueNote.value = "";
 
     await refreshIssues();
+
     el.status.textContent = resp.issue?.emailed ? "Saved. New issue emailed." : "Saved.";
   } catch (e) {
     el.status.textContent = `Error: ${e.message || e}`;
@@ -337,7 +349,7 @@ function wireScbaNotesToggles(container = document) {
   });
 }
 
-/** SCBA label rules */
+/** SCBA label rules: E/T/RS + unit# + 0 + seat# */
 function parseApparatusId_(id) {
   const m = String(id || "").match(/^([ETR])-(\d+)$/i);
   if (!m) return null;
@@ -349,18 +361,12 @@ function makeScbaLabels_(apparatusId) {
   if (!p) return ["E-101","E-102","E-103","E-104"];
 
   const prefix = (p.type === "R") ? "RS" : p.type;
-  const count = (apparatusId === "R-1") ? 5 : 4;
+  const count = (String(apparatusId) === "R-1") ? 5 : 4;
 
   const labels = [];
   for (let seat = 1; seat <= count; seat++) {
     labels.push(`${prefix}-${p.num}0${seat}`);
   }
-  return labels;
-}
-
-function makeReserveScbaLabels_(qty = 10) {
-  const labels = [];
-  for (let i = 1; i <= qty; i++) labels.push(`R-${String(i).padStart(3, "0")}`);
   return labels;
 }
 
@@ -575,7 +581,6 @@ async function fetchJson(url, opts) {
   const res = await fetch(url, { headers: { "Content-Type": "application/json" }, ...opts });
   const text = await res.text();
 
-  // Try parse JSON; if HTML comes back, throw useful error
   let data = {};
   try { data = JSON.parse(text); }
   catch { throw new Error(`Non-JSON response. Check Apps Script deployment. Snippet: ${text.slice(0, 120)}`); }
