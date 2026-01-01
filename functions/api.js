@@ -1,49 +1,39 @@
 export async function onRequest(context) {
-  const { request, env } = context;
+  const { request } = context;
   const url = new URL(request.url);
+
+  // Your deployed Apps Script Web App URL (ends with /exec)
+  const SCRIPT = "https://script.google.com/macros/s/AKfycbwg9hAI7oD0Nn_ELHLlXzl1xVZOiPBKsgXi7thqx-tGVeCfiedVZw2OHQWJudk85faSww/exec";
+
+  // Forward query string (?action=...)
+  const target = new URL(SCRIPT);
+  target.search = url.search;
 
   // CORS preflight
   if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders() });
+    return new Response("", { status: 204, headers: corsHeaders() });
   }
 
-  try {
-    const scriptUrl = env.STATION1_SCRIPT_URL;
-    if (!scriptUrl) throw new Error("Missing STATION1_SCRIPT_URL");
+  const init = {
+    method: request.method,
+    headers: { "Content-Type": "application/json" }
+  };
 
-    // Forward query params
-    const target = new URL(scriptUrl);
-    for (const [k, v] of url.searchParams.entries()) target.searchParams.set(k, v);
+  // Forward POST body to Apps Script
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    init.body = await request.text();
+  }
 
-    let upstream;
-    if (request.method === "GET") {
-      upstream = await fetch(target.toString(), { method: "GET" });
-    } else if (request.method === "POST") {
-      const body = await request.text();
-      upstream = await fetch(target.toString(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body
-      });
-    } else {
-      return new Response(JSON.stringify({ ok: false, error: "Method not allowed" }), {
-        status: 405,
-        headers: { ...corsHeaders(), "Content-Type": "application/json" }
-      });
+  const resp = await fetch(target.toString(), init);
+  const text = await resp.text();
+
+  return new Response(text, {
+    status: resp.status,
+    headers: {
+      ...corsHeaders(),
+      "Content-Type": resp.headers.get("Content-Type") || "application/json"
     }
-
-    const text = await upstream.text();
-    return new Response(text, {
-      status: upstream.status,
-      headers: { ...corsHeaders(), "Content-Type": "application/json" }
-    });
-
-  } catch (e) {
-    return new Response(JSON.stringify({ ok: false, error: String(e?.message || e) }), {
-      status: 500,
-      headers: { ...corsHeaders(), "Content-Type": "application/json" }
-    });
-  }
+  });
 }
 
 function corsHeaders() {
