@@ -7,6 +7,8 @@
 
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#c41212">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
   <style>
     :root{
@@ -33,12 +35,16 @@
     .muted{color:var(--muted); font-size:13px}
     .hr{height:1px; background:#e6e9ee; margin:14px 0}
     .btn{
-      background:var(--brand); color:#fff; border:none; cursor:pointer; font-weight:700;
+      background:var(--brand); color:#fff; border:none; cursor:pointer; font-weight:800;
       padding:12px 14px;
     }
     .btn:active{transform:translateY(1px)}
     ul{margin:8px 0 0 18px}
-    #status{font-weight:600}
+    #status{font-weight:700}
+    .pill{
+      display:inline-block; padding:4px 10px; border-radius:999px;
+      background:#eef1f5; color:#333; font-size:12px; font-weight:700;
+    }
   </style>
 </head>
 
@@ -82,7 +88,7 @@
 
       <div>
         <label>Current / Active Issues</label>
-        <div class="muted">These are open issues for the selected station + apparatus.</div>
+        <div class="muted">Open issues for the selected station + apparatus.</div>
         <ul id="activeIssues"><li class="muted">Loading…</li></ul>
       </div>
 
@@ -90,14 +96,14 @@
 
       <div class="row">
         <div>
-          <label for="newIssue">New Issue (email only sends if you enter something here)</label>
+          <label for="newIssue">New Issue <span class="pill">Email only sends if filled</span></label>
           <textarea id="newIssue" placeholder="Describe the new issue (leave blank if no new issue)."></textarea>
         </div>
         <div>
           <label for="newIssueNote">Bullet Note (optional)</label>
-          <input id="newIssueNote" placeholder="Short note to show next to the issue (optional)">
+          <input id="newIssueNote" placeholder="Short note shown next to the issue (optional)">
           <div class="muted" style="margin-top:8px">
-            Tip: Use this for quick status like “Waiting on parts”, “OOS”, “Needs mechanic”, etc.
+            Examples: “OOS”, “Waiting on parts”, “Needs mechanic”, “Placed spare”.
           </div>
         </div>
       </div>
@@ -113,12 +119,24 @@
     </div>
   </main>
 
+  <!-- Service worker registration (auto updates without hard refresh) -->
   <script>
-    // Service worker (optional; safe even if you haven’t added sw.js yet)
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(()=>{});
+      navigator.serviceWorker.register("/service-worker.js").then((reg) => {
+        reg.onupdatefound = () => {
+          const nw = reg.installing;
+          if (!nw) return;
+          nw.onstatechange = () => {
+            // If a new SW installed while an old SW is controlling the page, reload once.
+            if (nw.state === "installed" && navigator.serviceWorker.controller) {
+              window.location.reload();
+            }
+          };
+        };
+      }).catch(() => {});
     }
   </script>
+
   <script src="/app.js"></script>
 </body>
 </html>
