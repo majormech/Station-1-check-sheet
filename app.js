@@ -2,11 +2,16 @@ const api = {
   async getConfig() {
     return fetchJson(`/api?action=getConfig`);
   },
-  async getRigs() {
-    return fetchJson(`/api?action=getRigs`);
+  async getRigs(stationId) {
+    const q = new URLSearchParams({ action: "getRigs", stationId: stationId || "1" });
+    return fetchJson(`/api?${q.toString()}`);
   },
-  async getActiveIssues(rigId) {
-    const q = new URLSearchParams({ action: "getActiveIssues", rigId: rigId || "" });
+  async getActiveIssues(stationId, apparatusId) {
+    const q = new URLSearchParams({
+      action: "getActiveIssues",
+      stationId: stationId || "1",
+      rigId: apparatusId || ""
+    });
     return fetchJson(`/api?${q.toString()}`);
   },
   async saveCheck(payload) {
@@ -14,19 +19,33 @@ const api = {
   }
 };
 
-let runtime = null;
-
 const el = {
   who: document.getElementById("who"),
-  rig: document.getElementById("rig"),
+  station: document.getElementById("station"),
+  apparatus: document.getElementById("apparatus"),
   checkType: document.getElementById("checkType"),
   formArea: document.getElementById("formArea"),
   saveBtn: document.getElementById("saveBtn"),
   status: document.getElementById("status"),
   issues: document.getElementById("activeIssues"),
   newIssue: document.getElementById("newIssue"),
-  newIssueNote: document.getElementById("newIssueNote"),
+  newIssueNote: document.getElementById("newIssueNote")
 };
+
+let runtime = null;
+let rigsByStation = {};
+
+const CHECK_TYPES_MASTER = [
+  { value: "apparatusDaily", label: "Apparatus Daily" },
+  { value: "medicalDaily", label: "Medical Daily" },
+  { value: "scbaWeekly", label: "SCBA Weekly" },
+  { value: "pumpWeekly", label: "Pump Weekly" },
+  { value: "aerialWeekly", label: "Aerial Weekly" },
+  { value: "sawWeekly", label: "Saws Weekly" },
+  { value: "batteriesWeekly", label: "Batteries Weekly" },
+  { value: "oosUnit", label: "Out of Service — Unit" },
+  { value: "oosEquipment", label: "Out of Service — Equipment" }
+];
 
 init();
 
@@ -35,47 +54,139 @@ async function init() {
 
   runtime = (await api.getConfig()).config;
 
-  // rigs
-  const rigsResp = await api.getRigs();
-  el.rig.innerHTML = rigsResp.rigs.map(r => `<option value="${esc(r.rigId)}">${esc(r.rigName)}</option>`).join("");
+  // Station list (alpha: station 1 only, but selector is ready)
+  const stations = runtime?.stations || [{ stationId: "1", stationName: "Station 1" }];
+  el.station.innerHTML = stations
+    .map(s => `<option value="${esc(s.stationId)}">${esc(s.stationName)}</option>`)
+    .join("");
 
-  // remember "who"
+  // Default station
+  const savedStation = localStorage.getItem("dfd_station") || runtime.stationIdDefault || "1";
+  el.station.value = savedStation;
+
+  // Completed By persistence
   const savedWho = localStorage.getItem("dfd_who");
   if (savedWho) el.who.value = savedWho;
 
   el.who.addEventListener("change", () => localStorage.setItem("dfd_who", el.who.value.trim()));
-  el.rig.addEventListener("change", refreshIssues);
-  el.checkType.addEventListener("change", renderForm);
+  el.station.addEventListener("change", async () => {
+    localStorage.setItem("dfd_station", el.station.value);
+    await loadRigsForStation();
+    await refreshIssues();
+    renderForm();
+    updateCheckTypeOptions();
+  });
+
+  el.apparatus.addEventListener("change", async () => {
+    renderForm();
+    updateCheckTypeOptions();
+    await refreshIssues();
+  });
+
+  el.checkType.addEventListener("change", () => renderForm());
   el.saveBtn.addEventListener("click", onSave);
 
+  // Fill check type dropdown first (options refined later)
+  el.checkType.innerHTML = CHECK_TYPES_MASTER
+    .map(x => `<option value="${esc(x.value)}">${esc(x.label)}</option>`)
+    .join("");
+
+  await loadRigsForStation();
+
+  updateCheckTypeOptions();
   renderForm();
   await refreshIssues();
 
   el.status.textContent = "Ready.";
 }
 
+async function loadRigsForStation() {
+  const stationId = el.station.value || "1";
+
+  // Fetch rigs for this station
+  const rigsResp = await api.getRigs(stationId);
+  const rigs = Array.isArray(rigsResp?.rigs) ? rigsResp.rigs : [];
+  rigsByStation[stationId] = rigs;
+
+  if (!rigs.length) {
+    el.apparatus.innerHTML = "";
+    el.status.textContent = "No apparatus returned from API.";
+    return;
+  }
+
+  el.apparatus.innerHTML = rigs
+    .map(r => `<option value="${esc(r.rigId)}">${esc(r.rigName || r.rigId)}</option>`)
+    .join("");
+
+  // Restore last apparatus if valid
+  const savedApp = localStorage.getItem(`dfd_apparatus_${stationId}`);
+  if (savedApp && rigs.some(r => r.rigId === savedApp)) el.apparatus.value = savedApp;
+
+  el.apparatus.addEventListener("change", () => {
+    localStorage.setItem(`dfd_apparatus_${stationId}`, el.apparatus.value);
+  }, { once: true });
+}
+
 async function refreshIssues() {
-  const rigId = el.rig.value;
-  const resp = await api.getActiveIssues(rigId);
-  const issues = resp.issues || [];
+  const stationId = el.station.value || "1";
+  const apparatusId = el.apparatus.value || "";
+
+  const resp = await api.getActiveIssues(stationId, apparatusId);
+  const issues = Array.isArray(resp?.issues) ? resp.issues : [];
+
   el.issues.innerHTML = issues.length
-    ? issues.map(i => `<li>• <b>${esc(i.rigId || "")}</b> — ${esc(i.issueText || "")}${i.note ? ` — <i>${esc(i.note)}</i>` : ""}</li>`).join("")
+    ? issues.map(i =>
+        `<li>• <b>${esc(i.rigId || "")}</b> — ${esc(i.issueText || "")}` +
+        (i.note ? ` — <i>${esc(i.note)}</i>` : "") +
+        `</li>`
+      ).join("")
     : `<li>No active issues.</li>`;
+}
+
+function updateCheckTypeOptions() {
+  const a = el.apparatus.value || "";
+
+  const allowAerial = a.startsWith("T-") || a === "E-5";
+  const allowSaws = a !== "E-1";
+  const allowPump = a === "E-1" || a === "T-1" || a === "E-5"; // safe rule
+
+  // Rebuild options with filtering
+  const filtered = CHECK_TYPES_MASTER.filter(ct => {
+    if (ct.value === "aerialWeekly") return allowAerial;
+    if (ct.value === "sawWeekly") return allowSaws;
+    if (ct.value === "pumpWeekly") return allowPump;
+    return true;
+  });
+
+  const current = el.checkType.value || "apparatusDaily";
+  el.checkType.innerHTML = filtered
+    .map(x => `<option value="${esc(x.value)}">${esc(x.label)}</option>`)
+    .join("");
+
+  // Keep current if still allowed
+  if (filtered.some(x => x.value === current)) {
+    el.checkType.value = current;
+  } else {
+    el.checkType.value = "apparatusDaily";
+  }
 }
 
 function renderForm() {
   const type = el.checkType.value;
+  const apparatusId = el.apparatus.value || "";
 
-  // Minimal “full set” forms (you can keep expanding)
   if (type === "apparatusDaily") el.formArea.innerHTML = apparatusDailyForm();
   else if (type === "medicalDaily") el.formArea.innerHTML = medicalDailyForm(runtime);
-  else if (type === "scbaWeekly") el.formArea.innerHTML = scbaWeeklyForm();
+  else if (type === "scbaWeekly") el.formArea.innerHTML = scbaWeeklyForm(apparatusId);
   else if (type === "pumpWeekly") el.formArea.innerHTML = pumpWeeklyForm();
   else if (type === "aerialWeekly") el.formArea.innerHTML = aerialWeeklyForm();
   else if (type === "sawWeekly") el.formArea.innerHTML = sawWeeklyForm();
-  else if (type === "batteriesWeekly") el.formArea.innerHTML = batteriesWeeklyForm();
+  else if (type === "batteriesWeekly") el.formArea.innerHTML = batteriesWeeklyForm(apparatusId);
   else if (type === "oosUnit") el.formArea.innerHTML = oosUnitForm();
   else if (type === "oosEquipment") el.formArea.innerHTML = oosEquipmentForm();
+
+  wireNotesToggles(el.formArea);
+  wireScbaNotesToggles(el.formArea);
 }
 
 async function onSave() {
@@ -83,16 +194,18 @@ async function onSave() {
     el.status.textContent = "Saving…";
 
     const submitter = el.who.value.trim();
-    const rigId = el.rig.value;
+    const stationId = el.station.value || "1";
+    const rigId = el.apparatus.value;
 
     if (!submitter) return (el.status.textContent = "Enter Completed By.");
-    if (!rigId) return (el.status.textContent = "Select a rig.");
+    if (!rigId) return (el.status.textContent = "Select an apparatus.");
 
     const checkType = el.checkType.value;
     const checkPayload = readForm(checkType);
 
     const payload = {
       action: "saveCheck",
+      stationId,
       rigId,
       submitter,
       checkType,
@@ -104,23 +217,22 @@ async function onSave() {
     const resp = await api.saveCheck(payload);
     if (!resp.ok) throw new Error(resp.error || "Save failed");
 
-    // clear new issue fields after save
     el.newIssue.value = "";
     el.newIssueNote.value = "";
 
     await refreshIssues();
-    el.status.textContent = resp.issue?.emailed ? "Saved. Issue emailed." : "Saved.";
+    el.status.textContent = resp.issue?.emailed ? "Saved. New issue emailed." : "Saved.";
   } catch (e) {
     el.status.textContent = `Error: ${e.message || e}`;
   }
 }
 
 function readForm(type) {
-  const fd = new FormData(el.formArea.querySelector("form"));
+  const form = el.formArea.querySelector("form") || document.createElement("form");
+  const fd = new FormData(form);
   const obj = {};
   for (const [k, v] of fd.entries()) obj[k] = v;
 
-  // convert to shapes your Apps Script submit functions expect
   if (type === "apparatusDaily") {
     return {
       mileage: obj.mileage, engineHours: obj.engineHours, fuel: obj.fuel, def: obj.def, tank: obj.tank,
@@ -141,13 +253,13 @@ function readForm(type) {
   }
 
   if (type === "medicalDaily") {
-    // drugs are dynamic checkboxes/inputs
     const drugs = [];
     document.querySelectorAll("[data-drug-row]").forEach(row => {
-      const name = row.querySelector("[data-drug-name]").value;
-      const qty = row.querySelector("[data-drug-qty]").value;
-      const exp = row.querySelector("[data-drug-exp]").value;
-      drugs.push({ name, qty: Number(qty || 0), exp });
+      drugs.push({
+        name: row.querySelector("[data-drug-name]").value,
+        qty: Number(row.querySelector("[data-drug-qty]").value || 0),
+        exp: row.querySelector("[data-drug-exp]").value
+      });
     });
 
     return {
@@ -171,23 +283,6 @@ function readForm(type) {
     return { entries };
   }
 
-  if (type === "pumpWeekly") {
-    return {
-      pumpShift: obj.pumpShift, throttle: obj.throttle, relief: obj.relief, gauges: obj.gauges,
-      overall: obj.overall, notes: obj.notes
-    };
-  }
-
-  if (type === "aerialWeekly") {
-    return {
-      masterSwitch: obj.masterSwitch, modeSwitch: obj.modeSwitch,
-      outriggers: obj.outriggers, outriggersLube: obj.outriggersLube,
-      lRaise: obj.lRaise, lRotate: obj.lRotate, lExtend: obj.lExtend, lRetract: obj.lRetract, lLower: obj.lLower,
-      nRaise: obj.nRaise, nLower: obj.nLower, nRight: obj.nRight, nLeft: obj.nLeft, nFog: obj.nFog, nStraight: obj.nStraight,
-      lights: obj.lights, overall: obj.overall, notes: obj.notes
-    };
-  }
-
   if (type === "sawWeekly") {
     const entries = [];
     document.querySelectorAll("[data-saw-row]").forEach(r => {
@@ -203,30 +298,93 @@ function readForm(type) {
     return { entries };
   }
 
-  if (type === "batteriesWeekly") {
-    return obj;
-  }
-
-  if (type === "oosUnit") {
-    return {
-      reason: obj.reason,
-      replacementReserve: obj.replacementReserve,
-      equipmentMoved: obj.equipmentMoved,
-      rtsDate: obj.rtsDate
-    };
-  }
-
-  if (type === "oosEquipment") {
-    return {
-      type: obj.type,
-      identifier: obj.identifier,
-      reason: obj.reason,
-      replacement: obj.replacement,
-      rtsDate: obj.rtsDate
-    };
-  }
-
   return obj;
+}
+
+/** Notes hidden unless Fail (PF blocks) */
+function wireNotesToggles(container = document) {
+  container.querySelectorAll("select[data-notes-target]").forEach(sel => {
+    const targetId = sel.getAttribute("data-notes-target");
+    const wrap = container.querySelector(`#${CSS.escape(targetId)}`);
+    if (!wrap) return;
+
+    const update = () => {
+      const isFail = (sel.value || "").toLowerCase() === "fail";
+      wrap.style.display = isFail ? "" : "none";
+      if (!isFail) wrap.querySelectorAll("input,textarea").forEach(i => (i.value = ""));
+    };
+
+    sel.addEventListener("change", update);
+    update();
+  });
+}
+
+/** Notes hidden unless Fail (SCBA row notes) */
+function wireScbaNotesToggles(container = document) {
+  container.querySelectorAll("[data-scba-row]").forEach(row => {
+    const sel = row.querySelector("[data-passfail]");
+    const notes = row.querySelector("[data-notes]");
+    if (!sel || !notes) return;
+
+    const update = () => {
+      const isFail = (sel.value || "").toLowerCase() === "fail";
+      notes.style.display = isFail ? "" : "none";
+      if (!isFail) notes.value = "";
+    };
+
+    sel.addEventListener("change", update);
+    update();
+  });
+}
+
+/** SCBA label rules */
+function parseApparatusId_(id) {
+  const m = String(id || "").match(/^([ETR])-(\d+)$/i);
+  if (!m) return null;
+  return { type: m[1].toUpperCase(), num: m[2] };
+}
+
+function makeScbaLabels_(apparatusId) {
+  const p = parseApparatusId_(apparatusId);
+  if (!p) return ["E-101","E-102","E-103","E-104"];
+
+  const prefix = (p.type === "R") ? "RS" : p.type;
+  const count = (apparatusId === "R-1") ? 5 : 4;
+
+  const labels = [];
+  for (let seat = 1; seat <= count; seat++) {
+    labels.push(`${prefix}-${p.num}0${seat}`);
+  }
+  return labels;
+}
+
+function makeReserveScbaLabels_(qty = 10) {
+  const labels = [];
+  for (let i = 1; i <= qty; i++) labels.push(`R-${String(i).padStart(3, "0")}`);
+  return labels;
+}
+
+/** UI building blocks */
+function pfBlock(label, key) {
+  const notesId = `${key}NotesWrap`;
+  return `
+    <div class="pf">
+      <div><b>${esc(label)}</b></div>
+
+      <label>Pass/Fail
+        <select name="${key}PassFail" data-notes-target="${notesId}">
+          <option value="Pass">Pass</option>
+          <option value="Fail">Fail</option>
+        </select>
+      </label>
+
+      <div id="${notesId}" class="notesWrap" style="display:none">
+        <label>Notes
+          <input name="${key}Notes" placeholder="Notes">
+        </label>
+      </div>
+    </div>
+  `;
 }
 
 function apparatusDailyForm() {
@@ -242,7 +400,7 @@ function apparatusDailyForm() {
     ${pfBlock("Knox Box Keys", "knox")}
     ${pfBlock("Portable Radios (4)", "radios")}
     ${pfBlock("Lights", "lights")}
-    ${pfBlock("SCBA (4)", "scba")}
+    ${pfBlock("SCBA", "scba")}
     ${pfBlock("Spare Bottles", "spare")}
     ${pfBlock("RIT Pack", "rit")}
     ${pfBlock("Flash Lights", "flash")}
@@ -255,59 +413,48 @@ function apparatusDailyForm() {
   </form>`;
 }
 
-function pfBlock(label, key) {
-  return `
-    <div class="pf">
-      <div><b>${esc(label)}</b></div>
-      <label>Pass/Fail
-        <select name="${key}PassFail">
-          <option>Pass</option><option>Fail</option>
-        </select>
-      </label>
-      <label>Notes
-        <input name="${key}Notes" placeholder="Notes">
-      </label>
-    </div>
-  `;
-}
-
 function medicalDailyForm(cfg) {
   const drugs = cfg?.drugs || [];
   const defaults = cfg?.defaultQty || {};
   return `
   <form>
     <div class="grid2">
-      <label>O2 Bottle Level (0-2000)<input name="o2" type="number"></label>
+      <label>O2 Bottle Level <input name="o2" type="number"></label>
       <label>Airway Equipment
-        <select name="airwayPassFail"><option>Pass</option><option>Fail</option></select>
+        <select name="airwayPassFail">
+          <option value="Pass">Pass</option>
+          <option value="Fail">Fail</option>
+        </select>
       </label>
     </div>
     <label>Airway Notes <input name="airwayNotes"></label>
-
+    <div class="hr"></div>
     <h3>Drugs</h3>
-    <div>
-      ${drugs.map(d => `
-        <div class="drug" data-drug-row>
-          <input data-drug-name value="${esc(d)}" readonly />
-          <input data-drug-qty type="number" value="${Number(defaults[d] ?? 0)}" />
-          <input data-drug-exp type="date" />
-        </div>
-      `).join("")}
-    </div>
+    <div class="small">Enter expirations you see today. Defaults are pre-filled.</div>
+    ${drugs.map(d => `
+      <div class="drug" data-drug-row>
+        <input data-drug-name value="${esc(d)}" readonly />
+        <input data-drug-qty type="number" value="${Number(defaults[d] ?? 0)}" />
+        <input data-drug-exp type="date" />
+        <div class="small">qty / exp</div>
+      </div>
+    `).join("")}
   </form>`;
 }
 
-function scbaWeeklyForm() {
-  // simple: 4 rows; you can later generate labels server-side like your old logic
-  const labels = ["SCBA-1","SCBA-2","SCBA-3","SCBA-4"];
+function scbaWeeklyForm(apparatusId) {
+  const labels = makeScbaLabels_(apparatusId);
   return `
   <form>
     ${labels.map(l => `
       <div class="drug" data-scba-row>
-        <input data-label value="${esc(l)}" />
+        <input data-label value="${esc(l)}" readonly />
         <input data-psi type="number" placeholder="PSI" />
-        <select data-passfail><option>Pass</option><option>Fail</option></select>
-        <input data-notes placeholder="Notes" />
+        <select data-passfail>
+          <option value="Pass">Pass</option>
+          <option value="Fail">Fail</option>
+        </select>
+        <input data-notes placeholder="Notes (only if Fail)" style="display:none" />
       </div>
     `).join("")}
   </form>`;
@@ -317,11 +464,21 @@ function pumpWeeklyForm() {
   return `
   <form>
     <div class="grid2">
-      <label>Pump Shift <select name="pumpShift"><option>Pass</option><option>Fail</option></select></label>
-      <label>Throttle Valves <select name="throttle"><option>Pass</option><option>Fail</option></select></label>
-      <label>Relief Valve <select name="relief"><option>Pass</option><option>Fail</option></select></label>
-      <label>Gauges <select name="gauges"><option>Pass</option><option>Fail</option></select></label>
-      <label>Overall <select name="overall"><option>Pass</option><option>Fail</option></select></label>
+      <label>Pump Shift
+        <select name="pumpShift"><option>Pass</option><option>Fail</option></select>
+      </label>
+      <label>Throttle Valves
+        <select name="throttle"><option>Pass</option><option>Fail</option></select>
+      </label>
+      <label>Relief Valve
+        <select name="relief"><option>Pass</option><option>Fail</option></select>
+      </label>
+      <label>Gauges
+        <select name="gauges"><option>Pass</option><option>Fail</option></select>
+      </label>
+      <label>Overall
+        <select name="overall"><option>Pass</option><option>Fail</option></select>
+      </label>
     </div>
     <label>Notes <input name="notes"></label>
   </form>`;
@@ -349,7 +506,6 @@ function aerialWeeklyForm() {
 }
 
 function sawWeeklyForm() {
-  // 2 rows default; add more as needed
   return `
   <form>
     ${[1,2].map(() => `
@@ -365,19 +521,32 @@ function sawWeeklyForm() {
   </form>`;
 }
 
-function batteriesWeeklyForm() {
+function batteriesWeeklyForm(apparatusId) {
+  const showExtrication = (apparatusId || "") === "E-1";
   return `
   <form>
     <label>Battery Tools <input name="batteryTools"></label>
     <label>4-Gas Monitor Charged <input name="gasMonitorCharged"></label>
     <label>Unit Phone Charged <input name="unitPhoneCharged"></label>
     <label>Notes <input name="notes"></label>
-    <label>Extrication Check <input name="extricationCheck"></label>
-    <label>Spreader <input name="spreader"></label>
-    <label>Cutter <input name="cutter"></label>
-    <label>Ram <input name="ram"></label>
-    <label>All 6 Batteries Charged <input name="allCharged"></label>
-    <label>Damage Noted <input name="damage"></label>
+
+    ${showExtrication ? `
+      <div class="hr"></div>
+      <h3>Extrication (E-1 only)</h3>
+      <label>Extrication Check <input name="extricationCheck"></label>
+      <label>Spreader <input name="spreader"></label>
+      <label>Cutter <input name="cutter"></label>
+      <label>Ram <input name="ram"></label>
+      <label>All 6 Batteries Charged <input name="allCharged"></label>
+      <label>Damage Noted <input name="damage"></label>
+    ` : `
+      <input type="hidden" name="extricationCheck" value="">
+      <input type="hidden" name="spreader" value="">
+      <input type="hidden" name="cutter" value="">
+      <input type="hidden" name="ram" value="">
+      <input type="hidden" name="allCharged" value="">
+      <input type="hidden" name="damage" value="">
+    `}
   </form>`;
 }
 
@@ -403,12 +572,15 @@ function oosEquipmentForm() {
 }
 
 async function fetchJson(url, opts) {
-  const res = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
-    ...opts
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  const res = await fetch(url, { headers: { "Content-Type": "application/json" }, ...opts });
+  const text = await res.text();
+
+  // Try parse JSON; if HTML comes back, throw useful error
+  let data = {};
+  try { data = JSON.parse(text); }
+  catch { throw new Error(`Non-JSON response. Check Apps Script deployment. Snippet: ${text.slice(0, 120)}`); }
+
+  if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
 }
 
