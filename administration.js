@@ -7,7 +7,7 @@
      POST {action:"updateIssueStatus"...}
 */
 
-const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbwg9hAI7oD0Nn_ELHLlXzl1xVZOiPBKsgXi7thqx-tGVeCfiedVZw2OHQWJudk85faSww/exec";
+const DEFAULT_GAS_URL = "/gas";
 
 const $ = (s) => document.querySelector(s);
 
