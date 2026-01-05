@@ -29,11 +29,7 @@ function savePrefs(){
   localStorage.setItem('dfd_admin_name', ($('#adminName').value||'').trim());
 }
 
-function gasBase(){
-  const url = ($('#gasUrl').value || '').trim();
-  if (!url) throw new Error('Enter GAS Web App URL');
-  return url.replace(/\/+$/, '');
-}
+const DEFAULT_GAS_URL = "/gas";
 function adminName(){
   const n = ($('#adminName').value || '').trim();
   if (!n) throw new Error('Enter Admin Name (for logging)');
