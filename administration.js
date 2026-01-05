@@ -7,8 +7,6 @@
      POST {action:"updateIssueStatus"...}
 */
 
-const DEFAULT_GAS_URL = "/gas";
-
 const $ = (s) => document.querySelector(s);
 
 function toast(msg, ms=2200){
