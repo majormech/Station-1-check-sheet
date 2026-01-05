@@ -7,6 +7,8 @@
      POST {action:"updateIssueStatus"...}
 */
 
+const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbwg9hAI7oD0Nn_ELHLlXzl1xVZOiPBKsgXi7thqx-tGVeCfiedVZw2OHQWJudk85faSww/exec";
+
 const $ = (s) => document.querySelector(s);
 
 function toast(msg, ms=2200){
@@ -19,7 +21,7 @@ function toast(msg, ms=2200){
 function loadPrefs(){
   const gas = localStorage.getItem('dfd_gas_url') || '';
   const name = localStorage.getItem('dfd_admin_name') || '';
-  $('#gasUrl').value = gas;
+  $('#gasUrl').value = gas || DEFAULT_GAS_URL;     // lock-in default if empty
   $('#adminName').value = name;
 }
 function savePrefs(){
@@ -63,12 +65,60 @@ async function gasPost(body){
   return json;
 }
 
+/* ---------- Apparatus requirement rules (ADMIN UI only) ---------- */
+/*
+  Your rules:
+  - E-1: NO Saws Weekly, NO Aerial Weekly
+  - R-1: NO Pump Weekly, NO Aerial Weekly, NO Medical Daily
+  - T-1/T-2/T-3: DO have pumps, so YES Pump Weekly
+*/
+function requirementsFor(apparatusIdRaw){
+  const id = String(apparatusIdRaw || '').toUpperCase().trim();
+
+  // default: show everything
+  const req = {
+    apparatusDaily: true,
+    medicalDaily: true,
+    scbaWeekly: true,
+    pumpWeekly: true,
+    aerialWeekly: true,
+    sawWeekly: true,
+    batteriesWeekly: true
+  };
+
+  if (id === 'E-1'){
+    req.sawWeekly = false;
+    req.aerialWeekly = false;
+  }
+
+  if (id === 'R-1'){
+    req.pumpWeekly = false;
+    req.aerialWeekly = false;
+    req.medicalDaily = false;
+  }
+
+  // Trucks: keep pumpWeekly true (already default)
+  if (/^T-\d+$/i.test(id)){
+    req.pumpWeekly = true;
+  }
+
+  return req;
+}
+
 /* ---------- UI builders ---------- */
-function pill(ok, lastIso){
+function pill(okOrNull, lastIso){
+  // okOrNull:
+  //   true  => DONE (green)
+  //   false => NOT DONE (red)
+  //   null  => N/A (gray)
+  if (okOrNull === null){
+    return `<span class="pill na">N/A</span><span class="sub">—</span>`;
+  }
+
   const last = lastIso ? new Date(lastIso) : null;
   const lastStr = last ? last.toLocaleString() : '—';
-  const cls = ok ? 'ok' : 'bad';
-  const label = ok ? 'DONE' : 'NOT DONE';
+  const cls = okOrNull ? 'ok' : 'bad';
+  const label = okOrNull ? 'DONE' : 'NOT DONE';
   return `
     <span class="pill ${cls}">${label}</span>
     <span class="sub">Last: ${lastStr}</span>
@@ -82,18 +132,29 @@ function renderStatus(status){
   const rows = status.rows || [];
   for (const r of rows){
     const c = r.checks || {};
+    const req = requirementsFor(r.apparatusId);
+
     const tr = document.createElement('tr');
+
+    // helper to display either N/A or pill based on requirements
+    const cell = (required, obj) => {
+      if (!required) return pill(null);
+      return pill(!!obj?.ok, obj?.last);
+    };
+
     tr.innerHTML = `
       <td>${r.stationName || r.stationId}</td>
       <td><b>${r.apparatusId}</b></td>
-      <td>${pill(!!c.apparatusDaily?.ok, c.apparatusDaily?.last)}</td>
-      <td>${pill(!!c.medicalDaily?.ok, c.medicalDaily?.last)}</td>
-      <td>${pill(!!c.scbaWeekly?.ok, c.scbaWeekly?.last)}</td>
-      <td>${pill(!!c.pumpWeekly?.ok, c.pumpWeekly?.last)}</td>
-      <td>${pill(!!c.aerialWeekly?.ok, c.aerialWeekly?.last)}</td>
-      <td>${pill(!!c.sawWeekly?.ok, c.sawWeekly?.last)}</td>
-      <td>${pill(!!c.batteriesWeekly?.ok, c.batteriesWeekly?.last)}</td>
+
+      <td>${cell(req.apparatusDaily, c.apparatusDaily)}</td>
+      <td>${cell(req.medicalDaily,   c.medicalDaily)}</td>
+      <td>${cell(req.scbaWeekly,     c.scbaWeekly)}</td>
+      <td>${cell(req.pumpWeekly,     c.pumpWeekly)}</td>
+      <td>${cell(req.aerialWeekly,   c.aerialWeekly)}</td>
+      <td>${cell(req.sawWeekly,      c.sawWeekly)}</td>
+      <td>${cell(req.batteriesWeekly,c.batteriesWeekly)}</td>
     `;
+
     tb.appendChild(tr);
   }
 }
