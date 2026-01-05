@@ -21,7 +21,7 @@ function toast(msg, ms=2200){
 function loadPrefs(){
   const gas = localStorage.getItem('dfd_gas_url') || '';
   const name = localStorage.getItem('dfd_admin_name') || '';
-  $('#gasUrl').value = gas || DEFAULT_GAS_URL;     // lock-in default if empty
+  $('#gasUrl').value = gas || DEFAULT_GAS_URL;
   $('#adminName').value = name;
 }
 function savePrefs(){
@@ -32,7 +32,7 @@ function savePrefs(){
 function gasBase(){
   const url = ($('#gasUrl').value || '').trim();
   if (!url) throw new Error('Enter GAS Web App URL');
-  return url.replace(/\/+$/, ''); // strip trailing /
+  return url.replace(/\/+$/, '');
 }
 function adminName(){
   const n = ($('#adminName').value || '').trim();
@@ -46,7 +46,8 @@ async function gasGet(params){
   const res = await fetch(`${base}?${qs.toString()}`, { method:'GET' });
   const text = await res.text();
   let json;
-  try { json = JSON.parse(text); } catch(e){ throw new Error(`Bad JSON from GAS: ${text.slice(0,120)}`); }
+  try { json = JSON.parse(text); }
+  catch(e){ throw new Error(`Bad JSON from GAS: ${text.slice(0,180)}`); }
   if (!json.ok) throw new Error(json.error || 'Request failed');
   return json;
 }
@@ -60,7 +61,8 @@ async function gasPost(body){
   });
   const text = await res.text();
   let json;
-  try { json = JSON.parse(text); } catch(e){ throw new Error(`Bad JSON from GAS: ${text.slice(0,120)}`); }
+  try { json = JSON.parse(text); }
+  catch(e){ throw new Error(`Bad JSON from GAS: ${text.slice(0,180)}`); }
   if (!json.ok) throw new Error(json.error || 'Request failed');
   return json;
 }
@@ -74,8 +76,6 @@ async function gasPost(body){
 */
 function requirementsFor(apparatusIdRaw){
   const id = String(apparatusIdRaw || '').toUpperCase().trim();
-
-  // default: show everything
   const req = {
     apparatusDaily: true,
     medicalDaily: true,
@@ -97,7 +97,6 @@ function requirementsFor(apparatusIdRaw){
     req.medicalDaily = false;
   }
 
-  // Trucks: keep pumpWeekly true (already default)
   if (/^T-\d+$/i.test(id)){
     req.pumpWeekly = true;
   }
@@ -107,14 +106,9 @@ function requirementsFor(apparatusIdRaw){
 
 /* ---------- UI builders ---------- */
 function pill(okOrNull, lastIso){
-  // okOrNull:
-  //   true  => DONE (green)
-  //   false => NOT DONE (red)
-  //   null  => N/A (gray)
   if (okOrNull === null){
     return `<span class="pill na">N/A</span><span class="sub">—</span>`;
   }
-
   const last = lastIso ? new Date(lastIso) : null;
   const lastStr = last ? last.toLocaleString() : '—';
   const cls = okOrNull ? 'ok' : 'bad';
@@ -135,8 +129,6 @@ function renderStatus(status){
     const req = requirementsFor(r.apparatusId);
 
     const tr = document.createElement('tr');
-
-    // helper to display either N/A or pill based on requirements
     const cell = (required, obj) => {
       if (!required) return pill(null);
       return pill(!!obj?.ok, obj?.last);
@@ -183,7 +175,7 @@ function renderWeeklyConfig(cfg){
         <h3>${it.label}</h3>
         <div class="meta">Current: <b>${current}</b></div>
       </div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <div class="controls">
         <select data-key="${it.key}">
           ${WEEKDAYS.map(d => `<option ${d===current?'selected':''}>${d}</option>`).join('')}
         </select>
@@ -198,11 +190,20 @@ function renderWeeklyConfig(cfg){
       const user = adminName();
       await gasPost({ action:'setWeeklyDay', checkKey:key, weekday, user });
       toast(`${it.label} set to ${weekday}`);
-      await refreshAll(); // reflect in status windows immediately
+      await refreshAll();
     });
 
     box.appendChild(row);
   }
+}
+
+/* ---------- Issues (NEW/OLD/RESOLVED + Acked) ---------- */
+function issueClass(iss){
+  // Acked overrides color
+  if (iss.acked) return 'is-acked';
+  const s = String(iss.status || '').toUpperCase();
+  if (s === 'OLD') return 'is-old';
+  return 'is-new'; // NEW (or anything else treated as NEW)
 }
 
 function renderIssues(issues){
@@ -216,34 +217,69 @@ function renderIssues(issues){
 
   for (const iss of issues){
     const wrap = document.createElement('div');
-    wrap.className = 'issue';
+    wrap.className = `issue ${issueClass(iss)}`;
 
     const updated = iss.lastUpdatedAt ? new Date(iss.lastUpdatedAt).toLocaleString() : '—';
+    const created = iss.createdAt ? new Date(iss.createdAt).toLocaleString() : '';
+
+    const currentStatus = String(iss.status || 'NEW').toUpperCase();
+    const selStatus = (v) => (v === currentStatus ? 'selected' : '');
+
+    const ackedChecked = iss.acked ? 'checked' : '';
 
     wrap.innerHTML = `
       <div style="min-width:0">
         <h3>${iss.apparatusId} — ${escapeHtml(iss.issueText || '')}</h3>
-        <div class="meta">Status: <b>${iss.status}</b> • Updated: ${updated}</div>
+        <div class="meta">
+          Status: <b>${escapeHtml(currentStatus)}</b>
+          • Updated: ${updated}
+          ${created ? `• Created: ${created}` : ``}
+        </div>
         ${iss.bulletNote ? `<div class="meta">Note: ${escapeHtml(iss.bulletNote)}</div>` : ``}
       </div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+
+      <div class="controls">
+        <label class="chk" title="If checked, admin has seen it / working it (turns green)">
+          <input type="checkbox" data-acked="${iss.issueId}" ${ackedChecked}>
+          Seen / Working
+        </label>
+
         <select data-issue="${iss.issueId}">
-          <option value="ACTIVE">Active</option>
-          <option value="RESOLVED">Resolved</option>
+          <option value="NEW" ${selStatus('NEW')}>NEW</option>
+          <option value="OLD" ${selStatus('OLD')}>OLD</option>
+          <option value="RESOLVED" ${selStatus('RESOLVED')}>RESOLVED</option>
         </select>
+
         <button class="btn" data-apply="${iss.issueId}">Apply</button>
       </div>
     `;
 
     wrap.querySelector('button[data-apply]').addEventListener('click', async () => {
-      savePrefs();
-      const val = wrap.querySelector(`select[data-issue="${iss.issueId}"]`).value;
-      if (val !== 'RESOLVED'){ toast('No change'); return; }
+      try{
+        savePrefs();
+        const user = adminName();
 
-      const user = adminName();
-      await gasPost({ action:'updateIssueStatus', issueId: iss.issueId, status:'RESOLVED', user });
-      toast('Issue resolved');
-      await refreshIssues();
+        const status = wrap.querySelector(`select[data-issue="${iss.issueId}"]`).value;
+        const acked = wrap.querySelector(`input[data-acked="${iss.issueId}"]`).checked;
+
+        await gasPost({
+          action:'updateIssueStatus',
+          issueId: iss.issueId,
+          status,
+          acked,
+          user
+        });
+
+        if (status === 'RESOLVED'){
+          toast('Issue resolved');
+        } else {
+          toast('Issue updated');
+        }
+
+        await refreshIssues();
+      } catch(err){
+        toast(err.message, 3400);
+      }
     });
 
     box.appendChild(wrap);
@@ -264,14 +300,22 @@ async function refreshStatusAndConfig(){
   const s = await gasGet({ action:'getAdminStatus' });
   renderStatus(s.status);
 
+  // getWeeklyConfig still supported, but getAdminStatus includes weeklyConfig
   const cfg = s.status.weeklyConfig || (await gasGet({ action:'getWeeklyConfig' })).weeklyConfig;
   renderWeeklyConfig(cfg);
 }
 
 async function refreshIssues(){
-  // for now station 1 only; later we can loop all stations
+  // station 1 for now
   const res = await gasGet({ action:'listIssues', stationId:'1', includeCleared:'false' });
-  const issues = (res.issues || []).filter(x => x.status !== 'CLEARED' && x.status !== 'RESOLVED');
+
+  // Admin UI: show everything except CLEARED + RESOLVED
+  // (GAS will auto-flip NEW->OLD after 96h when read)
+  const issues = (res.issues || []).filter(x => {
+    const s = String(x.status || '').toUpperCase();
+    return s !== 'CLEARED' && s !== 'RESOLVED';
+  });
+
   renderIssues(issues);
 }
 
@@ -284,8 +328,7 @@ async function refreshAll(){
 function setupVisibilityRefresh(){
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      // refresh when returning to tab
-      refreshAll().catch(err => toast(err.message, 3000));
+      refreshAll().catch(err => toast(err.message, 3200));
     }
   });
 }
