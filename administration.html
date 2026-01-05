@@ -7,8 +7,8 @@
   <style>
     :root{
       --brand:#c41212; --brand-ink:#fff; --ink:#111; --muted:#666;
-      --bg:#fafafa; --card:#ffffff; --ok:#1f9d55; --bad:#c81e1e;
-      --warn:#c9a200;
+      --bg:#fafafa; --card:#ffffff;
+      --ok:#1f9d55; --warn:#b7791f; --bad:#c81e1e; --na:#6b7280;
       --line:#eee;
     }
     *{box-sizing:border-box}
@@ -27,6 +27,7 @@
       border:1px solid #ddd;border-radius:10px;padding:9px 10px;outline:none;background:#fff;min-width:160px;min-height:38px;font:inherit
     }
     .btn{appearance:none;border:none;border-radius:10px;padding:9px 14px;font-weight:900;cursor:pointer;background:var(--brand);color:#fff}
+    .btn.secondary{background:#111}
     .btn:disabled{opacity:.5;cursor:not-allowed}
     .panel{padding:14px 16px}
     .note{color:var(--muted);font-size:12px}
@@ -46,16 +47,22 @@
 
     .pill{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:6px 10px;font-weight:900;font-size:12px}
     .pill.ok{background:rgba(31,157,85,.12);color:var(--ok);border:1px solid rgba(31,157,85,.25)}
+    .pill.warn{background:rgba(183,121,31,.12);color:var(--warn);border:1px solid rgba(183,121,31,.25)}
     .pill.bad{background:rgba(200,30,30,.12);color:var(--bad);border:1px solid rgba(200,30,30,.25)}
-    .pill.na{background:rgba(0,0,0,.06);color:#444;border:1px solid rgba(0,0,0,.10)}
+    .pill.na{background:rgba(107,114,128,.10);color:var(--na);border:1px solid rgba(107,114,128,.25)}
     .sub{display:block;color:var(--muted);font-size:11px;margin-top:2px}
 
     .two-col{display:grid;grid-template-columns:1fr;gap:12px}
-    @media (min-width: 980px){
-      .two-col{grid-template-columns:1fr 1fr}
+    @media (min-width: 980px){ .two-col{grid-template-columns:1fr 1fr} }
+
+    .box{
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px 12px;
+      background:#fff;
     }
 
-    /* issue cards */
+    /* Issues */
     .issue{
       border:1px solid var(--line);
       border-radius:12px;
@@ -68,29 +75,40 @@
     }
     .issue h3{margin:0 0 2px;font-size:14px}
     .issue .meta{color:var(--muted);font-size:12px}
-    .issue select{min-width:160px}
+    .issue .meta b{color:#111}
+    .issue select{min-width:140px}
 
-    /* status highlighting */
-    .issue.is-new{border-color:rgba(200,30,30,.35);background:rgba(200,30,30,.06)}
-    .issue.is-old{border-color:rgba(201,162,0,.40);background:rgba(201,162,0,.10)}
-    .issue.is-acked{border-color:rgba(31,157,85,.35);background:rgba(31,157,85,.08)}
-
-    .controls{
-      display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end
-    }
-
-    .chk{
-      display:inline-flex;gap:8px;align-items:center;
-      padding:8px 10px;border-radius:10px;border:1px solid #ddd;background:#fff;
-      font-weight:800;
-      user-select:none;
-    }
-    .chk input{width:16px;height:16px}
-
-    .hidden{display:none!important}
+    .issue.flag-new{border-color:rgba(200,30,30,.45); background:rgba(200,30,30,.06)}
+    .issue.flag-old{border-color:rgba(183,121,31,.45); background:rgba(183,121,31,.06)}
+    .issue.flag-ack{border-color:rgba(31,157,85,.45); background:rgba(31,157,85,.06)}
+    .issue-left{min-width:0; flex: 1 1 auto;}
+    .issue-right{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    .chk{display:flex;align-items:center;gap:8px;font-weight:800;color:#111}
+    .chk input{width:18px;height:18px}
 
     .toast{position:fixed;right:16px;bottom:16px;display:flex;gap:10px;align-items:center;background:#111;color:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 6px 24px rgba(0,0,0,.2);opacity:0;transform:translateY(8px);transition:.2s}
     .toast.show{opacity:1;transform:translateY(0)}
+
+    .spinner{display:none;align-items:center;gap:8px;color:var(--muted);font-weight:700}
+    .spinner.show{display:inline-flex}
+    .dot{width:8px;height:8px;border-radius:999px;background:#bbb;animation:blink 1.2s infinite ease-in-out}
+    .dot:nth-child(2){animation-delay:.15s}
+    .dot:nth-child(3){animation-delay:.3s}
+    @keyframes blink{0%,80%,100%{opacity:.3}40%{opacity:1}}
+
+    /* Mobile scaling */
+    @media (max-width: 1024px), (pointer: coarse), (hover: none){
+      html{font-size:22px;}
+      body{font-size:1rem;}
+      h1{font-size:1.25rem}
+      h2{font-size:1rem}
+      .wrap{padding:0 16px}
+      select,input[type="text"]{padding:14px 16px;min-height:56px;border-radius:12px;min-width:220px}
+      .btn{padding:14px 18px;border-radius:14px}
+      .grid th,.grid td{padding:12px 14px}
+      .issue{padding:14px 16px}
+      .chk input{width:22px;height:22px}
+    }
   </style>
 </head>
 <body>
@@ -101,18 +119,25 @@
           <div class="brand-badge"></div>
           <h1>DFD Administration</h1>
         </div>
+
         <div class="grow"></div>
 
         <div class="row">
           <div>
-            <label>GAS Web App URL</label><br/>
-            <input id="gasUrl" type="text" placeholder="https://script.google.com/macros/s/.../exec">
-          </div>
-          <div>
             <label>Admin Name</label><br/>
             <input id="adminName" type="text" placeholder="Name for logging">
           </div>
+
+          <div class="box" style="padding:8px 10px">
+            <div class="note" style="margin-bottom:6px"><b>Connection</b>: using Cloudflare proxy</div>
+            <div class="note">Base URL: <b id="baseUrlLabel">/gas</b></div>
+          </div>
+
           <button class="btn" id="btnRefresh">Refresh</button>
+          <div class="spinner" id="spin">
+            <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+            <span>Working…</span>
+          </div>
         </div>
       </div>
 
@@ -120,7 +145,7 @@
         <div class="two-col">
           <div>
             <h2>Quick Status</h2>
-            <div class="note">Daily window: 06:40 → 06:40. Weekly window uses the configured day at 06:40.</div>
+            <div class="note">Daily window: 06:40 → 06:40. Weekly window uses the configured day (default Saturday) at 06:40.</div>
             <div style="margin-top:10px; overflow:auto; max-height: 60vh;">
               <table class="grid" id="statusTable">
                 <thead>
@@ -143,15 +168,15 @@
 
           <div>
             <h2>Weekly Schedule</h2>
-            <div class="note">Change the day here and it updates config (no code edits needed).</div>
+            <div class="note">Change the day here and it updates your spreadsheet config (no code edit needed).</div>
             <div id="weeklyConfigBox" style="display:grid;gap:10px;margin-top:10px"></div>
 
             <div style="height:12px"></div>
 
             <h2>Issues</h2>
             <div class="note">
-              Status colors: <b>NEW</b>=red (first 96h), <b>OLD</b>=yellow, <b>Acked</b>=green.
-              Set to <b>RESOLVED</b> to remove from both UIs and log who/when.
+              <b>NEW</b> = red • auto becomes <b>OLD</b> after 96 hours (yellow) •
+              check <b>Seen by Admin</b> to turn green • <b>RESOLVED</b> removes it from both UIs.
             </div>
             <div id="issuesBox" style="display:grid;gap:10px;margin-top:10px"></div>
           </div>
@@ -165,3 +190,4 @@
   <script src="./administration.js"></script>
 </body>
 </html>
+
