@@ -2,44 +2,95 @@ export async function onRequest(context) {
   const { request } = context;
   const url = new URL(request.url);
 
-  // Your deployed Apps Script Web App URL (ends with /exec)
-  const SCRIPT = "https://script.google.com/macros/s/AKfycbwg9hAI7oD0Nn_ELHLlXzl1xVZOiPBKsgXi7thqx-tGVeCfiedVZw2OHQWJudk85faSww/exec";
-
-  // Forward query string (?action=...)
-  const target = new URL(SCRIPT);
-  target.search = url.search;
+  // Locked GAS Web App URL (ends with /exec)
+  const SCRIPT =
+    "https://script.google.com/macros/s/AKfycbwg9hAI7oD0Nn_ELHLlXzl1xVZOiPBKsgXi7thqx-tGVeCfiedVZw2OHQWJudk85faSww/exec";
 
   // CORS preflight
   if (request.method === "OPTIONS") {
     return new Response("", { status: 204, headers: corsHeaders() });
   }
 
+  // Build target URL (forward query string)
+  const target = new URL(SCRIPT);
+  target.search = url.search;
+
+  // Start with forwarding request method + some headers
   const init = {
     method: request.method,
-    headers: { "Content-Type": "application/json" }
+    headers: new Headers()
   };
 
-  // Forward POST body to Apps Script
+  // Forward a few useful headers
+  const passHeaders = ["accept", "content-type"];
+  for (const h of passHeaders) {
+    const v = request.headers.get(h);
+    if (v) init.headers.set(h, v);
+  }
+
+  // If no content-type was provided for POST/PUT, assume JSON
+  if (
+    request.method !== "GET" &&
+    request.method !== "HEAD" &&
+    request.method !== "OPTIONS" &&
+    !init.headers.get("content-type")
+  ) {
+    init.headers.set("content-type", "application/json");
+  }
+
+  // Forward body for non-GET/HEAD
   if (request.method !== "GET" && request.method !== "HEAD") {
     init.body = await request.text();
   }
 
-  const resp = await fetch(target.toString(), init);
+  let resp;
+  try {
+    resp = await fetch(target.toString(), init);
+  } catch (err) {
+    return jsonError(502, "Proxy fetch failed", String(err));
+  }
+
+  const contentType = resp.headers.get("content-type") || "";
   const text = await resp.text();
 
-  return new Response(text, {
-    status: resp.status,
-    headers: {
-      ...corsHeaders(),
-      "Content-Type": resp.headers.get("Content-Type") || "application/json"
-    }
-  });
+  // If GAS returns HTML, convert to JSON error (prevents JSON.parse crash)
+  if (contentType.includes("text/html") || text.trim().startsWith("<!DOCTYPE")) {
+    return jsonError(
+      502,
+      "Upstream returned HTML (GAS error/login/deploy issue)",
+      text.slice(0, 500) // keep it short
+    );
+  }
+
+  // Otherwise pass through
+  const outHeaders = {
+    ...corsHeaders(),
+    "Content-Type": contentType || "application/json",
+    // helpful: avoid caching responses that may vary
+    "Cache-Control": "no-store"
+  };
+
+  return new Response(text, { status: resp.status, headers: outHeaders });
 }
 
 function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
+    "Access-Control-Allow-Headers": "Content-Type, Accept"
   };
+}
+
+function jsonError(status, error, detail) {
+  return new Response(
+    JSON.stringify({ ok: false, error, detail }),
+    {
+      status,
+      headers: {
+        ...corsHeaders(),
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store"
+      }
+    }
+  );
 }
