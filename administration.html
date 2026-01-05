@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DFD Administration</title>
+  <style>
+    :root{
+      --brand:#c41212; --brand-ink:#fff; --ink:#111; --muted:#666;
+      --bg:#fafafa; --card:#ffffff; --ok:#1f9d55; --bad:#c81e1e;
+      --line:#eee;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    h1{font-size:20px;margin:0}
+    h2{font-size:16px;margin:0 0 8px}
+    .wrap{max-width:1200px;margin:18px auto;padding:0 14px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.04);overflow:hidden}
+    .header{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .brand{display:inline-flex;align-items:center;gap:10px}
+    .brand-badge{width:28px;height:28px;border-radius:8px;background:var(--brand)}
+    .grow{flex:1 1 auto}
+    .row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+    label{font-weight:700}
+    select,input[type="text"]{
+      border:1px solid #ddd;border-radius:10px;padding:9px 10px;outline:none;background:#fff;min-width:160px;min-height:38px;font:inherit
+    }
+    .btn{appearance:none;border:none;border-radius:10px;padding:9px 14px;font-weight:800;cursor:pointer;background:var(--brand);color:#fff}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .panel{padding:14px 16px}
+    .note{color:var(--muted);font-size:12px}
+
+    .grid{
+      width:100%;
+      border-collapse:separate;
+      border-spacing:0;
+      overflow:hidden;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:#fff;
+    }
+    .grid th,.grid td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+    .grid th{background:#f9f9f9;text-align:left;font-size:12px;color:#333;position:sticky;top:0;z-index:1}
+    .grid tr:last-child td{border-bottom:none}
+
+    .pill{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:6px 10px;font-weight:900;font-size:12px}
+    .pill.ok{background:rgba(31,157,85,.12);color:var(--ok);border:1px solid rgba(31,157,85,.25)}
+    .pill.bad{background:rgba(200,30,30,.12);color:var(--bad);border:1px solid rgba(200,30,30,.25)}
+    .sub{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+
+    .two-col{display:grid;grid-template-columns:1fr;gap:12px}
+    @media (min-width: 980px){
+      .two-col{grid-template-columns:1fr 1fr}
+    }
+
+    .issue{
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px 12px;
+      background:#fff;
+      display:flex;
+      gap:12px;
+      align-items:flex-start;
+      justify-content:space-between;
+    }
+    .issue h3{margin:0 0 2px;font-size:14px}
+    .issue .meta{color:var(--muted);font-size:12px}
+    .issue select{min-width:140px}
+    .hidden{display:none!important}
+
+    .toast{position:fixed;right:16px;bottom:16px;display:flex;gap:10px;align-items:center;background:#111;color:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 6px 24px rgba(0,0,0,.2);opacity:0;transform:translateY(8px);transition:.2s}
+    .toast.show{opacity:1;transform:translateY(0)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="header">
+        <div class="brand">
+          <div class="brand-badge"></div>
+          <h1>DFD Administration</h1>
+        </div>
+        <div class="grow"></div>
+
+        <div class="row">
+          <div>
+            <label>GAS Web App URL</label><br/>
+            <input id="gasUrl" type="text" placeholder="https://script.google.com/macros/s/.../exec">
+          </div>
+          <div>
+            <label>Admin Name</label><br/>
+            <input id="adminName" type="text" placeholder="Name for logging">
+          </div>
+          <button class="btn" id="btnRefresh">Refresh</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="two-col">
+          <div>
+            <h2>Quick Status</h2>
+            <div class="note">Daily window: 06:40 → 06:40. Weekly window uses the configured day (default Saturday) at 06:40.</div>
+            <div style="margin-top:10px; overflow:auto; max-height: 60vh;">
+              <table class="grid" id="statusTable">
+                <thead>
+                  <tr>
+                    <th>Station</th>
+                    <th>Apparatus</th>
+                    <th>Apparatus Daily</th>
+                    <th>Medical Daily</th>
+                    <th>SCBA Weekly</th>
+                    <th>Pump Weekly</th>
+                    <th>Aerial Weekly</th>
+                    <th>Saws Weekly</th>
+                    <th>Batteries Weekly</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div>
+            <h2>Weekly Schedule</h2>
+            <div class="note">Change the day here and it updates your spreadsheet config (no code edit needed).</div>
+            <div id="weeklyConfigBox" style="display:grid;gap:10px;margin-top:10px"></div>
+
+            <div style="height:12px"></div>
+
+            <h2>Issues</h2>
+            <div class="note">Set to <b>Resolved</b> to remove from the crew UI and log who/when.</div>
+            <div id="issuesBox" style="display:grid;gap:10px;margin-top:10px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"><span id="toastText">Saved</span></div>
+
+  <script src="./administration.js"></script>
+</body>
+</html>
