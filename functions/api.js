@@ -15,13 +15,12 @@ export async function onRequest(context) {
   const target = new URL(SCRIPT);
   target.search = url.search;
 
-  // Start with forwarding request method + some headers
+  // Forward method + a couple headers
   const init = {
     method: request.method,
     headers: new Headers()
   };
 
-  // Forward a few useful headers
   const passHeaders = ["accept", "content-type"];
   for (const h of passHeaders) {
     const v = request.headers.get(h);
@@ -58,15 +57,14 @@ export async function onRequest(context) {
     return jsonError(
       502,
       "Upstream returned HTML (GAS error/login/deploy issue)",
-      text.slice(0, 500) // keep it short
+      text.slice(0, 500)
     );
   }
 
-  // Otherwise pass through
+  // Pass through
   const outHeaders = {
     ...corsHeaders(),
     "Content-Type": contentType || "application/json",
-    // helpful: avoid caching responses that may vary
     "Cache-Control": "no-store"
   };
 
@@ -82,15 +80,12 @@ function corsHeaders() {
 }
 
 function jsonError(status, error, detail) {
-  return new Response(
-    JSON.stringify({ ok: false, error, detail }),
-    {
-      status,
-      headers: {
-        ...corsHeaders(),
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store"
-      }
+  return new Response(JSON.stringify({ ok: false, error, detail }), {
+    status,
+    headers: {
+      ...corsHeaders(),
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store"
     }
-  );
+  });
 }
