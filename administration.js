@@ -21,14 +21,15 @@ function toast(msg, ms = 2200) {
 
 function loadPrefs() {
   const name = localStorage.getItem("dfd_admin_name") || "";
-  $("#adminName").value = name;
+  const el = $("#adminName");
+  if (el) el.value = name;
 }
 function savePrefs() {
-  localStorage.setItem("dfd_admin_name", ($("#adminName").value || "").trim());
+  localStorage.setItem("dfd_admin_name", ($("#adminName")?.value || "").trim());
 }
 
 function adminName() {
-  const n = ($("#adminName").value || "").trim();
+  const n = ($("#adminName")?.value || "").trim();
   if (!n) throw new Error("Enter Admin Name (for logging)");
   return n;
 }
@@ -110,9 +111,10 @@ function pill(okOrNull, lastIso) {
   const lastStr = last ? last.toLocaleString() : "—";
   const cls = okOrNull ? "ok" : "bad";
   const label = okOrNull ? "DONE" : "NOT DONE";
-  return `<span class="pill ${cls}">${label}</span><span class="sub">Last: ${lastStr}</span>`;
+  return `<span class="pill ${cls}">${label}</span><span class="sub">Last: ${escapeHtml(lastStr)}</span>`;
 }
 
+/* ✅ FIXED: mobile-friendly table rows with data-labels */
 function renderStatus(status) {
   const tb = $("#statusTable tbody");
   tb.innerHTML = "";
@@ -123,22 +125,23 @@ function renderStatus(status) {
     const req = requirementsFor(r.apparatusId);
 
     const cell = (required, obj) => {
-      if (!required) return pill(null);
+      if (!required) return pill(null, null);
       return pill(!!obj?.ok, obj?.last);
     };
 
     const tr = document.createElement("tr");
-tr.innerHTML = `
-  <td data-label="Station">${...}</td>
-  <td data-label="Apparatus">${...}</td>
-  <td data-label="Apparatus Daily">${...}</td>
-  <td data-label="Medical Daily">${...}</td>
-  <td data-label="SCBA Weekly">${...}</td>
-  <td data-label="Pump Weekly">${...}</td>
-  <td data-label="Aerial Weekly">${...}</td>
-  <td data-label="Saws Weekly">${...}</td>
-  <td data-label="Batteries Weekly">${...}</td>
-`;
+    tr.innerHTML = `
+      <td data-label="Station">${escapeHtml(r.stationName || r.stationId || "")}</td>
+      <td data-label="Apparatus">${escapeHtml(r.apparatusId || "")}</td>
+
+      <td data-label="Apparatus Daily">${cell(req.apparatusDaily, c.apparatusDaily)}</td>
+      <td data-label="Medical Daily">${cell(req.medicalDaily, c.medicalDaily)}</td>
+      <td data-label="SCBA Weekly">${cell(req.scbaWeekly, c.scbaWeekly)}</td>
+      <td data-label="Pump Weekly">${cell(req.pumpWeekly, c.pumpWeekly)}</td>
+      <td data-label="Aerial Weekly">${cell(req.aerialWeekly, c.aerialWeekly)}</td>
+      <td data-label="Saws Weekly">${cell(req.sawWeekly, c.sawWeekly)}</td>
+      <td data-label="Batteries Weekly">${cell(req.batteriesWeekly, c.batteriesWeekly)}</td>
+    `;
     tb.appendChild(tr);
   }
 }
@@ -164,22 +167,22 @@ function renderWeeklyConfig(cfg) {
     row.className = "issue";
     row.innerHTML = `
       <div>
-        <h3>${it.label}</h3>
+        <h3>${escapeHtml(it.label)}</h3>
         <div class="meta">Current: <b>${escapeHtml(current)}</b></div>
       </div>
       <div class="right">
-        <select data-key="${it.key}">
-          ${WEEKDAYS.map(d => `<option ${d === current ? "selected" : ""}>${d}</option>`).join("")}
+        <select data-key="${escapeHtml(it.key)}">
+          ${WEEKDAYS.map(d => `<option ${d === current ? "selected" : ""}>${escapeHtml(d)}</option>`).join("")}
         </select>
-        <button class="btn" data-save="${it.key}">Save</button>
+        <button class="btn" data-save="${escapeHtml(it.key)}">Save</button>
       </div>
     `;
 
-    row.querySelector('button[data-save]').addEventListener("click", async () => {
+    row.querySelector('button[data-save]')?.addEventListener("click", async () => {
       try{
         savePrefs();
         const key = it.key;
-        const weekday = row.querySelector(`select[data-key="${key}"]`).value;
+        const weekday = row.querySelector(`select[data-key="${CSS.escape(key)}"]`)?.value || current;
         const user = adminName();
         await apiPost({ action: "setWeeklyDay", checkKey: key, weekday, user });
         toast(`${it.label} set to ${weekday}`);
@@ -217,7 +220,6 @@ function groupByApparatus_(issues) {
     if (!map.has(ap)) map.set(ap, []);
     map.get(ap).push(iss);
   }
-  // sort apparatus keys naturally: E-1, R-1, T-1, T-3...
   const keys = Array.from(map.keys()).sort((a,b) => a.localeCompare(b, undefined, { numeric:true, sensitivity:"base" }));
   return keys.map(k => [k, map.get(k)]);
 }
@@ -299,8 +301,8 @@ function renderIssueRow_(iss) {
     try{
       savePrefs();
       const user = adminName();
-      const status = wrap.querySelector(`select[data-issue="${CSS.escape(iss.issueId)}"]`).value;
-      const ack = !!wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`).checked;
+      const status = wrap.querySelector(`select[data-issue="${CSS.escape(iss.issueId)}"]`)?.value || "NEW";
+      const ack = !!wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`)?.checked;
 
       await apiPost({
         action: "updateIssue",
@@ -399,18 +401,18 @@ async function loadEmailConfig() {
   const cfg = await apiGet({ action: "getEmailConfig" });
   const issues = cfg?.emails?.issues || [];
   const drugs = cfg?.emails?.drugs || [];
-  $("#issuesEmails").value = issues.join("\n");
-  $("#drugEmails").value = drugs.join("\n");
+  if ($("#issuesEmails")) $("#issuesEmails").value = issues.join("\n");
+  if ($("#drugEmails")) $("#drugEmails").value = drugs.join("\n");
 }
 
 async function saveEmailConfig(kind) {
   const user = adminName();
   if (kind === "issues") {
-    const emails = parseEmails_($("#issuesEmails").value);
+    const emails = parseEmails_($("#issuesEmails")?.value || "");
     await apiPost({ action: "setEmailConfig", kind: "issues", emails, user });
     toast("Issues emails saved");
   } else if (kind === "drugs") {
-    const emails = parseEmails_($("#drugEmails").value);
+    const emails = parseEmails_($("#drugEmails")?.value || "");
     await apiPost({ action: "setEmailConfig", kind: "drugs", emails, user });
     toast("Drug emails saved");
   }
@@ -440,7 +442,7 @@ async function refreshAll() {
 async function boot() {
   loadPrefs();
 
-  $("#btnRefresh").addEventListener("click", async () => {
+  $("#btnRefresh")?.addEventListener("click", async () => {
     try {
       savePrefs();
       await refreshAll();
@@ -450,12 +452,12 @@ async function boot() {
     }
   });
 
-  $("#btnSaveIssuesEmails").addEventListener("click", async () => {
+  $("#btnSaveIssuesEmails")?.addEventListener("click", async () => {
     try { savePrefs(); await saveEmailConfig("issues"); }
     catch (err) { toast(err.message, 3200); }
   });
 
-  $("#btnSaveDrugEmails").addEventListener("click", async () => {
+  $("#btnSaveDrugEmails")?.addEventListener("click", async () => {
     try { savePrefs(); await saveEmailConfig("drugs"); }
     catch (err) { toast(err.message, 3200); }
   });
