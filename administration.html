@@ -7,8 +7,7 @@
   <style>
     :root{
       --brand:#c41212; --brand-ink:#fff; --ink:#111; --muted:#666;
-      --bg:#fafafa; --card:#ffffff;
-      --ok:#1f9d55; --warn:#b7791f; --bad:#c81e1e; --na:#6b7280;
+      --bg:#fafafa; --card:#ffffff; --ok:#1f9d55; --bad:#c81e1e; --warn:#c9a100;
       --line:#eee;
     }
     *{box-sizing:border-box}
@@ -22,12 +21,13 @@
     .brand-badge{width:28px;height:28px;border-radius:8px;background:var(--brand)}
     .grow{flex:1 1 auto}
     .row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
-    label{font-weight:800}
+    label{font-weight:700}
     select,input[type="text"]{
       border:1px solid #ddd;border-radius:10px;padding:9px 10px;outline:none;background:#fff;min-width:160px;min-height:38px;font:inherit
     }
-    .btn{appearance:none;border:none;border-radius:10px;padding:9px 14px;font-weight:900;cursor:pointer;background:var(--brand);color:#fff}
+    .btn{appearance:none;border:none;border-radius:10px;padding:9px 14px;font-weight:800;cursor:pointer;background:var(--brand);color:#fff}
     .btn.secondary{background:#111}
+    .btn.link{background:transparent;color:var(--brand);padding:0;border-radius:0}
     .btn:disabled{opacity:.5;cursor:not-allowed}
     .panel{padding:14px 16px}
     .note{color:var(--muted);font-size:12px}
@@ -47,22 +47,23 @@
 
     .pill{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:6px 10px;font-weight:900;font-size:12px}
     .pill.ok{background:rgba(31,157,85,.12);color:var(--ok);border:1px solid rgba(31,157,85,.25)}
-    .pill.warn{background:rgba(183,121,31,.12);color:var(--warn);border:1px solid rgba(183,121,31,.25)}
     .pill.bad{background:rgba(200,30,30,.12);color:var(--bad);border:1px solid rgba(200,30,30,.25)}
-    .pill.na{background:rgba(107,114,128,.10);color:var(--na);border:1px solid rgba(107,114,128,.25)}
+    .pill.warn{background:rgba(201,161,0,.14);color:var(--warn);border:1px solid rgba(201,161,0,.28)}
+    .pill.na{background:rgba(0,0,0,.06);color:#555;border:1px solid rgba(0,0,0,.08)}
     .sub{display:block;color:var(--muted);font-size:11px;margin-top:2px}
 
     .two-col{display:grid;grid-template-columns:1fr;gap:12px}
-    @media (min-width: 980px){ .two-col{grid-template-columns:1fr 1fr} }
+    @media (min-width: 980px){
+      .two-col{grid-template-columns:1fr 1fr}
+    }
 
     .box{
       border:1px solid var(--line);
       border-radius:12px;
-      padding:10px 12px;
+      padding:12px;
       background:#fff;
     }
 
-    /* Issues */
     .issue{
       border:1px solid var(--line);
       border-radius:12px;
@@ -75,40 +76,15 @@
     }
     .issue h3{margin:0 0 2px;font-size:14px}
     .issue .meta{color:var(--muted);font-size:12px}
-    .issue .meta b{color:#111}
-    .issue select{min-width:140px}
-
-    .issue.flag-new{border-color:rgba(200,30,30,.45); background:rgba(200,30,30,.06)}
-    .issue.flag-old{border-color:rgba(183,121,31,.45); background:rgba(183,121,31,.06)}
-    .issue.flag-ack{border-color:rgba(31,157,85,.45); background:rgba(31,157,85,.06)}
-    .issue-left{min-width:0; flex: 1 1 auto;}
-    .issue-right{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-    .chk{display:flex;align-items:center;gap:8px;font-weight:800;color:#111}
-    .chk input{width:18px;height:18px}
+    .issue select{min-width:160px}
+    .hidden{display:none!important}
 
     .toast{position:fixed;right:16px;bottom:16px;display:flex;gap:10px;align-items:center;background:#111;color:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 6px 24px rgba(0,0,0,.2);opacity:0;transform:translateY(8px);transition:.2s}
     .toast.show{opacity:1;transform:translateY(0)}
 
-    .spinner{display:none;align-items:center;gap:8px;color:var(--muted);font-weight:700}
-    .spinner.show{display:inline-flex}
-    .dot{width:8px;height:8px;border-radius:999px;background:#bbb;animation:blink 1.2s infinite ease-in-out}
-    .dot:nth-child(2){animation-delay:.15s}
-    .dot:nth-child(3){animation-delay:.3s}
-    @keyframes blink{0%,80%,100%{opacity:.3}40%{opacity:1}}
-
-    /* Mobile scaling */
-    @media (max-width: 1024px), (pointer: coarse), (hover: none){
-      html{font-size:22px;}
-      body{font-size:1rem;}
-      h1{font-size:1.25rem}
-      h2{font-size:1rem}
-      .wrap{padding:0 16px}
-      select,input[type="text"]{padding:14px 16px;min-height:56px;border-radius:12px;min-width:220px}
-      .btn{padding:14px 18px;border-radius:14px}
-      .grid th,.grid td{padding:12px 14px}
-      .issue{padding:14px 16px}
-      .chk input{width:22px;height:22px}
-    }
+    .chkline{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .chkline label{font-weight:700;display:flex;gap:8px;align-items:center}
+    .small{font-size:12px;color:var(--muted)}
   </style>
 </head>
 <body>
@@ -119,7 +95,6 @@
           <div class="brand-badge"></div>
           <h1>DFD Administration</h1>
         </div>
-
         <div class="grow"></div>
 
         <div class="row">
@@ -127,17 +102,7 @@
             <label>Admin Name</label><br/>
             <input id="adminName" type="text" placeholder="Name for logging">
           </div>
-
-          <div class="box" style="padding:8px 10px">
-            <div class="note" style="margin-bottom:6px"><b>Connection</b>: using Cloudflare proxy</div>
-            <div class="note">Base URL: <b id="baseUrlLabel">/gas</b></div>
-          </div>
-
           <button class="btn" id="btnRefresh">Refresh</button>
-          <div class="spinner" id="spin">
-            <div class="dot"></div><div class="dot"></div><div class="dot"></div>
-            <span>Working…</span>
-          </div>
         </div>
       </div>
 
@@ -173,11 +138,45 @@
 
             <div style="height:12px"></div>
 
-            <h2>Issues</h2>
-            <div class="note">
-              <b>NEW</b> = red • auto becomes <b>OLD</b> after 96 hours (yellow) •
-              check <b>Seen by Admin</b> to turn green • <b>RESOLVED</b> removes it from both UIs.
+            <h2>Email Recipients</h2>
+            <div class="note">Add addresses for <b>Issues</b> and <b>Drugs expiring</b> notifications.</div>
+
+            <div class="box" style="margin-top:10px; display:grid; gap:10px;">
+              <div class="row">
+                <div style="min-width:260px;flex:1">
+                  <label>Email</label><br/>
+                  <input id="emailAddr" type="text" placeholder="name@example.com" style="width:100%">
+                </div>
+                <button class="btn" id="btnEmailSave">Add / Update</button>
+              </div>
+
+              <div class="chkline">
+                <label><input id="emailActive" type="checkbox" checked> Active</label>
+                <label><input id="emailIssues" type="checkbox" checked> Issues</label>
+                <label><input id="emailDrugs" type="checkbox"> Drugs expiring</label>
+                <span class="small">Tip: one address can receive both.</span>
+              </div>
+
+              <div style="overflow:auto; max-height: 260px;">
+                <table class="grid" id="emailsTable">
+                  <thead>
+                    <tr>
+                      <th>Email</th>
+                      <th>Active</th>
+                      <th>Issues</th>
+                      <th>Drugs expiring</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
             </div>
+
+            <div style="height:12px"></div>
+
+            <h2>Issues</h2>
+            <div class="note">Set to <b>Resolved</b> to remove from both UIs and log who/when.</div>
             <div id="issuesBox" style="display:grid;gap:10px;margin-top:10px"></div>
           </div>
         </div>
@@ -190,4 +189,3 @@
   <script src="./administration.js"></script>
 </body>
 </html>
-
