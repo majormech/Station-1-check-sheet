@@ -1,799 +1,244 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-  <base target="_top">
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DFD Daily/Weekly Checks</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Decatur Fire — Checks</title>
+
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#c41212">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
   <style>
     :root{
-      --brand:#c41212; --brand-ink:#fff; --ink:#111; --muted:#666;
-      --bg:#fafafa; --card:#ffffff;
-      --ok:#1f9d55; --warn:#b07d00; --bad:#c81e1e;
-      --line:#eee;
+      --brand:#c41212; --brandInk:#fff;
+      --bg:#f6f7f8; --card:#fff; --ink:#111; --muted:#666;
+      --radius:14px;
+
+      --ok:#1f9d55;
+      --warn:#b07d00;
+      --bad:#c81e1e;
     }
     *{box-sizing:border-box}
-    html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial;-webkit-text-size-adjust:100%;text-size-adjust:100%}
-    h1{font-size:20px;margin:0 0 8px}
-    h2{font-size:16px;margin:16px 0 8px}
-    h3{font-size:14px;margin:14px 0 6px;color:var(--muted)}
-    .wrap{max-width:1100px;margin:18px auto;padding:0 14px}
-    .card{background:var(--card);border:1px solid #eee;border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
-    .header{padding:14px 16px;border-bottom:1px solid #eee;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-    .grow{flex:1 1 auto}
-    .brand{display:inline-flex;align-items:center;gap:10px}
-    .brand-badge{width:28px;height:28px;border-radius:8px;background:var(--brand)}
-    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-    label{font-weight:600}
-    select,input[type="text"],input[type="number"],input[type="date"],textarea{
-      border:1px solid #ddd;border-radius:8px;padding:8px 10px;outline:none;background:#fff;min-width:160px;min-height:38px;font:inherit
+    body{margin:0; font:15px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial; background:var(--bg); color:var(--ink)}
+    header{background:var(--brand); color:var(--brandInk); padding:14px 16px; position:sticky; top:0; z-index:10}
+    header h1{margin:0; font-size:18px}
+    main{max-width:980px; margin:0 auto; padding:14px}
+    .card{background:var(--card); border-radius:var(--radius); padding:14px; box-shadow:0 2px 10px rgba(0,0,0,.06); margin-bottom:12px}
+    label{display:block; font-weight:600; margin:10px 0 6px}
+    input, select, textarea, button{
+      width:100%; padding:10px 12px; border-radius:12px;
+      border:1px solid #d7dbe0; font:inherit; background:#fff;
     }
-    textarea{min-height:72px;width:100%;resize:vertical}
-    .btn{appearance:none;border:none;border-radius:10px;padding:9px 14px;font-weight:700;cursor:pointer;background:var(--brand);color:#fff}
-    .btn.link{background:transparent;color:var(--brand);padding:0}
-    .btn:disabled{opacity:.5;cursor:not-allowed}
-    .tabs{display:flex;gap:6px;overflow:auto;padding:8px;border-bottom:1px solid #eee;background:#fff;border-radius:12px 12px 0 0}
-    .tab{white-space:nowrap;padding:8px 10px;border-radius:8px;border:1px solid #eee;background:#fff;cursor:pointer;font-weight:700}
-    .tab.active{background:var(--brand);border-color:var(--brand);color:#fff}
-    .tab.disabled{opacity:.4;pointer-events:none}
-    .panel{display:none;padding:16px}
-    .panel.active{display:block}
-    table{width:100%;border-collapse:collapse}
-    th,td{border:1px solid #eee;padding:6px 8px;vertical-align:top}
-    th{background:#f9f9f9;text-align:left}
-    .compact th,.compact td{padding:4px 6px}
-    .spinner{display:none}
-    .spinner.show{display:inline-flex;gap:8px;align-items:center;color:var(--muted)}
-    .spinner .dot{width:8px;height:8px;border-radius:999px;background:#bbb;animation:blink 1.2s infinite ease-in-out}
-    .spinner .dot:nth-child(2){animation-delay:.15s}.spinner .dot:nth-child(3){animation-delay:.3s}
-    @keyframes blink{0%,80%,100%{opacity:.3}40%{opacity:1}}
-    .toast{position:fixed;right:16px;bottom:16px;display:flex;gap:10px;align-items:center;background:#111;color:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 6px 24px rgba(0,0,0,.2);opacity:0;transform:translateY(8px);transition:.2s}
-    .toast.show{opacity:1;transform:translateY(0)}
-    .note{color:var(--muted);font-size:12px}
-    .hidden{display:none !important}
-
-    /* Expiration highlighting */
-    tr.exp-green td{ background: rgba(31,157,85,.10); }
-    tr.exp-yellow td{ background: rgba(176,125,0,.12); }
-    tr.exp-red td{ background: rgba(200,30,30,.12); }
-    tr.exp-none td{ background: transparent; }
-
-    /* ===== Mobile 2× scaling ===== */
-    @media (max-width: 1024px), (pointer: coarse), (hover: none){
-      html{font-size:28px;}
-      body{font-size:1rem;}
-      h1{font-size:1.25rem}
-      h2{font-size:1rem}
-      h3{font-size:.9rem}
-      .wrap{padding:0 18px}
-      .header{padding:18px 20px;gap:14px}
-      .brand-badge{width:36px;height:36px;border-radius:10px}
-      .row{gap:16px}
-      select,input[type="text"],input[type="number"],input[type="date"],textarea{
-        padding:14px 16px; min-height:56px; border-radius:12px; min-width:200px;
-      }
-      .btn{padding:14px 18px;border-radius:14px}
-      .tabs{gap:10px;padding:12px}
-      .tab{padding:12px 14px;border-radius:12px}
-      th,td{padding:12px 14px}
-      .compact th,.compact td{padding:10px 12px}
-      .toast{right:20px;bottom:20px;padding:14px 18px;border-radius:14px}
-      .note{font-size:.8rem}
+    textarea{min-height:70px; resize:vertical}
+    .row{display:grid; gap:12px}
+    @media (min-width:760px){ .row{grid-template-columns: 1fr 1fr} }
+    .row3{display:grid; gap:12px}
+    @media (min-width:960px){ .row3{grid-template-columns: 1fr 1fr 1fr} }
+    .muted{color:var(--muted); font-size:13px}
+    .hr{height:1px; background:#e6e9ee; margin:14px 0}
+    .btn{
+      background:var(--brand); color:#fff; border:none; cursor:pointer; font-weight:800;
+      padding:12px 14px;
     }
+    .btn:active{transform:translateY(1px)}
+    ul{margin:8px 0 0 18px}
+    #status{font-weight:700}
+    .pill{
+      display:inline-block; padding:4px 10px; border-radius:999px;
+      background:#eef1f5; color:#333; font-size:12px; font-weight:700;
+    }
+
+    /* ===== Drug expiration highlighting (NO layout changes) ===== */
+    /* Row-level highlight (most reliable, doesn't need specific TD structure) */
+    tr.exp-green td { background: rgba(31,157,85,.10) !important; }
+    tr.exp-yellow td{ background: rgba(176,125,0,.12) !important; }
+    tr.exp-red td   { background: rgba(200,30,30,.12) !important; }
+
+    /* Legend pills */
+    .legend{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
+    .legend .k{display:inline-flex;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+    .dot{width:10px;height:10px;border-radius:999px;display:inline-block}
+    .dot.g{background:rgba(31,157,85,.9)}
+    .dot.y{background:rgba(176,125,0,.9)}
+    .dot.r{background:rgba(200,30,30,.9)}
   </style>
 </head>
+
 <body>
-<div class="wrap">
-  <div class="card">
-    <div class="header">
-      <div class="brand">
-        <div class="brand-badge"></div>
-        <h1>DFD Daily / Weekly Checks</h1>
-      </div>
-      <div class="grow"></div>
-      <div class="spinner" id="globalSpinner">
-        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
-        <span>Working…</span>
-      </div>
-    </div>
+  <header>
+    <h1>Decatur Fire — Daily / Weekly Checks (Alpha)</h1>
+  </header>
 
-    <!-- Station / Unit / Submitter -->
-    <div class="panel" style="display:block;padding:12px;border-bottom:1px solid #eee">
+  <main>
+    <div class="card">
+      <div class="row3">
+        <div>
+          <label for="who">Completed By</label>
+          <input id="who" placeholder="Name">
+        </div>
+
+        <div>
+          <label for="station">Station</label>
+          <select id="station"></select>
+        </div>
+
+        <div>
+          <label for="apparatus">Apparatus</label>
+          <select id="apparatus"></select>
+        </div>
+      </div>
+
       <div class="row">
         <div>
-          <label for="stationSel">Station</label><br/>
-          <select id="stationSel"></select>
+          <label for="checkType">Check Type</label>
+          <select id="checkType"></select>
+        </div>
+
+        <div>
+          <label>&nbsp;</label>
+          <button id="saveBtn" class="btn" type="button">Save</button>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div>
+        <label>Current / Active Issues</label>
+        <div class="muted">Open issues for the selected station + apparatus.</div>
+        <ul id="activeIssues"><li class="muted">Loading…</li></ul>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="row">
+        <div>
+          <label for="newIssue">New Issue <span class="pill">Email only sends if filled</span></label>
+          <textarea id="newIssue" placeholder="Describe the new issue (leave blank if no new issue)."></textarea>
         </div>
         <div>
-          <label for="unitSel">Unit</label><br/>
-          <select id="unitSel"></select>
+          <label for="newIssueNote">Bullet Note (optional)</label>
+          <input id="newIssueNote" placeholder="Short note shown next to the issue (optional)">
+          <div class="muted" style="margin-top:8px">
+            Examples: “OOS”, “Waiting on parts”, “Needs mechanic”, “Placed spare”.
+          </div>
         </div>
-        <div>
-          <label for="submitter">Submitter (Name / ID)</label><br/>
-          <input id="submitter" type="text" placeholder="Last, First or Emp ID">
-        </div>
       </div>
 
-      <div class="row" style="margin-top:6px">
-        <label style="display:flex;align-items:center;gap:8px;">
-          <input id="autoAdvance" type="checkbox" checked>
-          Auto-advance to next tab after submit
-        </label>
-        <span class="note">Tabs enable/disable automatically (Aerial: T-1/T-2/T-3/E-5; Saws: Trucks & R-1; Extrication: E-1/E-4).</span>
-      </div>
-    </div>
-
-    <!-- Tabs -->
-    <div class="tabs" id="tabs">
-      <div class="tab active" data-tab="appr">Apparatus Daily</div>
-      <div class="tab" data-tab="med">Medical Daily</div>
-      <div class="tab" data-tab="scba">SCBA Weekly</div>
-      <div class="tab" data-tab="pump">Pump Weekly</div>
-      <div class="tab" data-tab="aerial">Aerial Weekly</div>
-      <div class="tab" data-tab="saw">Saws Weekly</div>
-      <div class="tab" data-tab="bat">Batteries / Extrication</div>
-      <div class="tab" data-tab="ossu">Out of Service — Units</div>
-      <div class="tab" data-tab="osse">Out of Service — Equipment</div>
-    </div>
-
-    <!-- Apparatus Daily -->
-    <div class="panel active" id="panel-appr">
-      <h2>Apparatus Daily</h2>
-      <div class="row">
-        <div><label>Mileage</label><br/><input id="ap_mileage" type="number" min="0" step="1"></div>
-        <div><label>Engine Hours</label><br/><input id="ap_enghrs" type="number" min="0" step="0.1"></div>
-        <div><label>Fuel %</label><br/><input id="ap_fuel" type="number" min="0" max="100" step="1"></div>
-        <div><label>DEF %</label><br/><input id="ap_def" type="number" min="0" max="100" step="1"></div>
-        <div><label>Tank Water %</label><br/><input id="ap_tank" type="number" min="0" max="100" step="1"></div>
-      </div>
-      <h3>Checks (Pass/Fail + Notes)</h3>
-      <table class="compact" id="ap_checks">
-        <thead><tr><th>Item</th><th>Pass/Fail</th><th>Notes</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <div style="margin-top:10px">
-        <button class="btn" id="btnSubmitAppr">Submit Apparatus Daily</button>
-      </div>
-    </div>
-
-    <!-- Medical Daily -->
-    <div class="panel" id="panel-med">
-      <h2>Medical Daily</h2>
-      <div class="row">
-        <div><label>O₂ Bottle Level (0-2000)</label><br/><input id="md_o2" type="number" min="0" max="2000" step="50"></div>
-        <div><label>Airway Equipment</label><br/>
-          <select id="md_airway"><option>Pass</option><option>Fail</option></select>
-        </div>
-        <div style="flex:1"><label>Airway Notes</label><br/><input id="md_airwayNotes" type="text" placeholder="Notes (optional)"></div>
-      </div>
-
-      <h3 style="margin-top:12px">Drugs (auto-populated with standard quantities)</h3>
-      <div class="note">
-        Expiration color: <b style="color:var(--ok)">Green</b> (&gt;30 days),
-        <b style="color:var(--warn)">Yellow</b> (≤30 days),
-        <b style="color:var(--bad)">Red</b> (≤14 days or expired).
-      </div>
-      <table class="compact" id="md_drugs">
-        <thead><tr><th style="width:40%">Drug</th><th style="width:15%">Qty</th><th style="width:25%">Expiration (yyyy-mm-dd)</th><th style="width:10%">✕</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <div class="row" style="margin-top:8px">
-        <button class="btn" id="md_addRow">Add Drug</button>
-      </div>
       <div style="margin-top:12px">
-        <button class="btn" id="btnSubmitMed">Submit Medical Daily</button>
+        <div id="status" class="muted">Loading…</div>
       </div>
     </div>
 
-    <!-- SCBA Weekly -->
-    <div class="panel" id="panel-scba">
-      <h2>SCBA Weekly</h2>
-      <div class="note">Labels auto-generate for the selected unit. You can pick a reserve to override.</div>
-      <table class="compact" id="scba_tbl">
-        <thead><tr>
-          <th style="width:28%">SCBA (auto)</th>
-          <th style="width:22%">Use reserve instead</th>
-          <th style="width:18%">Bottle PSI (0–4500)</th>
-          <th style="width:18%">PASS (Pass/Fail)</th>
-          <th>Notes</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-      <div class="row" style="margin-top:8px">
-        <button class="btn" id="btnSubmitSCBA">Submit SCBA Weekly</button>
+    <div class="card">
+      <label>Check Form</label>
+
+      <!-- Added legend only (doesn't change dropdown flow/layout) -->
+      <div class="legend" id="drugLegend" style="display:none">
+        <span class="k"><span class="dot g"></span> Exp > 30 days (Green)</span>
+        <span class="k"><span class="dot y"></span> Exp 15–30 days (Yellow)</span>
+        <span class="k"><span class="dot r"></span> Exp ≤ 14 days / expired (Red)</span>
       </div>
+
+      <div id="formArea" class="muted">Select a check type to begin.</div>
     </div>
+  </main>
 
-    <!-- Pump Weekly -->
-    <div class="panel" id="panel-pump">
-      <h2>Pump Weekly</h2>
-      <div class="row">
-        <div><label>Pump Shift</label><br/><select id="pm_shift"><option>Pass</option><option>Fail</option></select></div>
-        <div><label>Throttle Valves</label><br/><select id="pm_throttle"><option>Pass</option><option>Fail</option></select></div>
-        <div><label>Relief Valve</label><br/><select id="pm_relief"><option>Pass</option><option>Fail</option></select></div>
-        <div><label>Gauges</label><br/><select id="pm_gauges"><option>Pass</option><option>Fail</option></select></div>
-        <div style="flex:1"><label>Notes</label><br/><input id="pm_notes" type="text" placeholder="Notes (optional)"></div>
-      </div>
-      <div style="margin-top:12px">
-        <button class="btn" id="btnSubmitPump">Submit Pump Weekly</button>
-      </div>
-    </div>
-
-    <!-- Aerial Weekly -->
-    <div class="panel" id="panel-aerial">
-      <h2>Aerial Weekly</h2>
-      <div class="note">Enabled only for T-1, T-2, T-3, E-5.</div>
-      <div class="row">
-        <div><label>Master Switch</label><br/><select id="aw_ms"><option>Pass</option><option>Fail</option></select></div>
-        <div><label>Mode Switch</label><br/><select id="aw_mode"><option>Pass</option><option>Fail</option></select></div>
-        <div><label>Outriggers</label><br/><select id="aw_out"><option>Pass</option><option>Fail</option></select></div>
-        <div><label>Outriggers Lubed</label><br/><select id="aw_lube"><option>Pass</option><option>Fail</option></select></div>
-      </div>
-      <div style="margin-top:12px">
-        <button class="btn" id="btnSubmitAerial">Submit Aerial Weekly</button>
-      </div>
-    </div>
-
-    <!-- Saws Weekly -->
-    <div class="panel" id="panel-saw">
-      <h2>Saws Weekly</h2>
-      <div class="note">Enabled only for Trucks and R-1. Add one row per saw.</div>
-      <table class="compact" id="saw_tbl">
-        <thead><tr>
-          <th style="width:24%">Type (Roof/Rotary)</th>
-          <th style="width:12%">Saw #</th>
-          <th style="width:16%">Fuel %</th>
-          <th style="width:16%">Bar Oil %</th>
-          <th style="width:16%">Runs (Yes/No)</th>
-          <th>Notes</th>
-          <th style="width:8%">✕</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-      <div class="row" style="margin-top:8px">
-        <button class="btn" id="saw_add">Add Saw</button>
-      </div>
-      <div style="margin-top:12px">
-        <button class="btn" id="btnSubmitSaw">Submit Saws Weekly</button>
-      </div>
-    </div>
-
-    <!-- Batteries -->
-    <div class="panel" id="panel-bat">
-      <h2>Batteries / Extrication (Weekly)</h2>
-      <div class="row">
-        <div><label>Battery Tools</label><br/><select id="bt_tools"><option>Pass</option><option>Fail</option></select></div>
-        <div><label>4-Gas Monitor Charged</label><br/><select id="bt_gas"><option>Yes</option><option>No</option></select></div>
-        <div><label>Unit Phone Charged</label><br/><select id="bt_phone"><option>Yes</option><option>No</option></select></div>
-        <div style="flex:1"><label>Notes</label><br/><input id="bt_notes" type="text" placeholder="Notes (optional)"></div>
-      </div>
-      <div style="margin-top:12px">
-        <button class="btn" id="btnSubmitBat">Submit Batteries / Extrication</button>
-      </div>
-    </div>
-
-    <!-- OOS Units -->
-    <div class="panel" id="panel-ossu">
-      <h2>Out of Service — Units</h2>
-      <div class="row">
-        <div><label>Reason</label><br/><input id="ou_reason" type="text" placeholder="Reason"></div>
-        <div><label>Replacing Reserve Unit</label><br/><input id="ou_replace" type="text" placeholder="e.g., E-8 (OSS)"></div>
-        <div style="flex:1"><label>Equipment Moved (list)</label><br/><input id="ou_moved" type="text" placeholder="List moved items"></div>
-        <div><label>Return To Service (optional)</label><br/><input id="ou_rts" type="date"></div>
-      </div>
-      <div style="margin-top:12px">
-        <button class="btn" id="btnSubmitOSSU">Submit Unit OOS</button>
-      </div>
-    </div>
-
-    <!-- OOS Equipment -->
-    <div class="panel" id="panel-osse">
-      <h2>Out of Service — Equipment</h2>
-      <div class="row">
-        <div><label>Type</label><br/>
-          <select id="oe_type">
-            <option>SCBA</option><option>Saw</option><option>4-Gas</option><option>Bag Monitor</option><option>Other</option>
-          </select>
-        </div>
-        <div><label>Identifier</label><br/><input id="oe_id" type="text" placeholder="e.g., Serial / Label"></div>
-        <div style="flex:1"><label>Reason</label><br/><input id="oe_reason" type="text" placeholder="Reason"></div>
-        <div><label>Replacement (SCBA choose reserve)</label><br/><input id="oe_repl" type="text" placeholder="Reserve SCBA if applicable"></div>
-        <div><label>Expected RTS (optional)</label><br/><input id="oe_rts" type="date"></div>
-      </div>
-      <div style="margin-top:12px">
-        <button class="btn" id="btnSubmitOSSE">Submit Equipment OOS</button>
-      </div>
-    </div>
-
-  </div>
-</div>
-
-<div class="toast" id="toast"><span id="toastText">Saved</span></div>
-
-<script>
-  const META = <?!= JSON.stringify(meta) ?>;
-
-  const $ = sel => document.querySelector(sel);
-  const $$ = sel => Array.from(document.querySelectorAll(sel));
-  let activeTab = 'appr';
-
-  function toast(msg, ms=2200){ const t=$('#toast'); $('#toastText').textContent=msg||'Saved'; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), ms); }
-  function getStation(){ return $('#stationSel').value; }
-  function getStationName(){
-    const st = META.stations.find(s => s.id === getStation());
-    return st?.name || ("Station " + getStation());
-  }
-  function getUnit(){ return $('#unitSel').value; }
-  function getSubmitter(){ return $('#submitter').value.trim(); }
-  function ensureSubmitter(){ if(!getSubmitter()){ toast('Enter Submitter (Name / ID) first', 2500); return false;} return true; }
-
-  function setBusy(btn, busy=true, busyText='Saving…') {
-    if (!btn) return;
-    if (busy) { btn.dataset._orig = btn.textContent; btn.textContent = busyText; btn.disabled = true; }
-    else { btn.textContent = btn.dataset._orig || btn.textContent; btn.disabled = false; }
-  }
-  function showSaved(btn, savedText='Saved ✓', ms=800) {
-    if (!btn) return;
-    const orig = btn.dataset._orig || btn.textContent;
-    btn.textContent = savedText;
-    setTimeout(()=>{ btn.textContent = orig; btn.disabled = false; }, ms);
-  }
-
-  const TAB_ORDER = ['appr','med','scba','pump','aerial','saw','bat','ossu','osse'];
-  function isTabEnabled(key){
-    const t = document.querySelector(`.tab[data-tab="${key}"]`);
-    return t && !t.classList.contains('disabled');
-  }
-  function nextEligibleTab(fromKey){
-    const start = TAB_ORDER.indexOf(fromKey);
-    if (start < 0) return null;
-    for (let i = start + 1; i < TAB_ORDER.length; i++){
-      const k = TAB_ORDER[i];
-      if (isTabEnabled(k)) return k;
+  <!-- Service worker registration (auto updates without hard refresh) -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/service-worker.js").then((reg) => {
+        reg.onupdatefound = () => {
+          const nw = reg.installing;
+          if (!nw) return;
+          nw.onstatechange = () => {
+            if (nw.state === "installed" && navigator.serviceWorker.controller) {
+              window.location.reload();
+            }
+          };
+        };
+      }).catch(() => {});
     }
-    return null;
-  }
-  function maybeAdvance(fromKey){
-    const auto = document.getElementById('autoAdvance');
-    if (!auto || !auto.checked) return;
-    const nextKey = nextEligibleTab(fromKey);
-    if (nextKey) switchTab(nextKey);
-  }
+  </script>
 
-  function tabEnable(key, enabled){
-    const t = document.querySelector(`.tab[data-tab="${key}"]`);
-    t.classList.toggle('disabled', !enabled);
-    if (!enabled && activeTab===key) switchTab('appr');
-  }
-  function switchTab(key){
-    activeTab = key;
-    $$('.tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===key));
-    $$('.panel').forEach(p=>p.classList.toggle('active', p.id===`panel-${key}`));
-  }
-  $('#tabs').addEventListener('click', (e)=>{
-    const btn = e.target.closest('.tab'); if (!btn || btn.classList.contains('disabled')) return;
-    switchTab(btn.dataset.tab);
-  });
+  <script src="/app.js"></script>
 
-  /* ---------- Station / Unit ---------- */
-  function initStations(){
-    const stSel = $('#stationSel'); stSel.innerHTML = '';
-    META.stations.forEach(s=>{ const o=document.createElement('option'); o.value=s.id;o.textContent=s.name; stSel.appendChild(o); });
-    stSel.addEventListener('change', onStationChange);
-    onStationChange();
-  }
-  function onStationChange(){
-    const unitSel = $('#unitSel'); unitSel.innerHTML='';
-    const st = getStation();
-    const entry = META.stations.find(x=>x.id===st);
-    (entry?.units||[]).forEach(u=>{ const o=document.createElement('option'); o.value=u; o.textContent=u; unitSel.appendChild(o); });
-    unitSel.addEventListener('change', onUnitChange, {once:true});
-    onUnitChange();
-  }
-  function onUnitChange(){
-    const u = getUnit()||'';
-    tabEnable('aerial', /^(T-1|T-2|T-3|E-5)$/i.test(u));
-    tabEnable('saw', /^(T-\d+|R-1)$/i.test(u));
-    buildSCBATable();
-  }
+  <!-- Expiration highlighting hook (safe, does nothing unless it finds your med table) -->
+  <script>
+    (function(){
+      const MS_PER_DAY = 24*60*60*1000;
 
-  /* ---------- Apparatus checks ---------- */
-  function buildApChecks(){
-    const tb = $('#ap_checks tbody'); tb.innerHTML='';
-    [
-      "Knox Box Keys","Portable Radios (4)","Lights","SCBA (4)","Spare Bottles","RIT Pack",
-      "Flash Lights","TIC (4)","Gas Monitor","Hand Tools","Hydra-Ram","Ground Ladders","Passports/Shields"
-    ].forEach(name=>{
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${name}</td>
-        <td><select><option>Pass</option><option>Fail</option></select></td>
-        <td><input type="text" placeholder="Notes (optional)"></td>`;
-      tb.appendChild(tr);
-    });
-  }
-
-  /* ---------- Medical defaults + expiration coloring ---------- */
-  const DRUGS = META.drugs || [];
-  const DEFAULT_QTY = META.defaultQty || {};
-
-  const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-  function todayMidnight(){
-    const d = new Date();
-    d.setHours(0,0,0,0);
-    return d;
-  }
-
-  function daysUntil(expStr){
-    if (!expStr) return null;
-    const exp = new Date(expStr + "T00:00:00");
-    const diff = exp.getTime() - todayMidnight().getTime();
-    return Math.floor(diff / MS_PER_DAY);
-  }
-
-  // Green: >30, Yellow: 15-30, Red: <=14 (including expired)
-  function expClass(expStr){
-    const d = daysUntil(expStr);
-    if (d === null) return 'exp-none';
-    if (d <= 14) return 'exp-red';
-    if (d <= 30) return 'exp-yellow';
-    return 'exp-green';
-  }
-
-  function applyRowExpClass(tr){
-    const exp = tr.querySelector('.md-exp')?.value || '';
-    tr.classList.remove('exp-green','exp-yellow','exp-red','exp-none');
-    tr.classList.add(expClass(exp));
-  }
-
-  function addMedRow(name='', qty=1, exp=''){
-    const tb = $('#md_drugs tbody');
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><select class="md-name">${['',...DRUGS].map(d=>`<option ${d===name?'selected':''}>${d}</option>`).join('')}</select></td>
-      <td><input type="number" class="md-qty" min="0" step="1" value="${qty}"></td>
-      <td><input type="date" class="md-exp" value="${exp}"></td>
-      <td style="text-align:center"><button class="btn link md-del">✕</button></td>`;
-    tb.appendChild(tr);
-
-    tr.querySelector('.md-del').addEventListener('click', ()=> tr.remove());
-    tr.querySelector('.md-exp').addEventListener('change', ()=> applyRowExpClass(tr));
-
-    applyRowExpClass(tr);
-  }
-
-  function medBuildRowsFromDefaults(){
-    const tb = $('#md_drugs tbody'); tb.innerHTML='';
-    DRUGS.forEach(name=>{
-      addMedRow(name, (DEFAULT_QTY[name] ?? 1), '');
-    });
-  }
-
-  document.getElementById('md_addRow').addEventListener('click', ()=> addMedRow('',1,''));
-
-  function getExpiringMeds(drugs){
-    const t = todayMidnight();
-    return (drugs||[])
-      .filter(d => d && d.name && d.exp)
-      .map(d => {
-        const exp = new Date(d.exp + "T00:00:00");
-        const diffDays = (exp.getTime() - t.getTime()) / MS_PER_DAY;
-        return { name:d.name, qty:d.qty, exp:d.exp, daysToExp: diffDays };
-      })
-      .filter(d => d.daysToExp <= 14);
-  }
-
-  function promptReplacementCounts(expiring, unit){
-    const results = [];
-    for (const it of expiring){
-      const name = it.name;
-      const exp = it.exp;
-      const qty = it.qty;
-
-      const resp = window.prompt(
-        `Medication expiring (≤14 days):\n\n${name}\nExp: ${exp}\nUnit: ${unit}\n\nHow many replacements do you want to request?`,
-        String(qty || 0)
-      );
-
-      if (resp === null) continue; // skip if cancel
-      const n = Number(resp);
-      if (!isNaN(n) && n > 0){
-        results.push({ name, exp, qty, replaceCount:n });
+      function todayMidnight(){
+        const d = new Date();
+        d.setHours(0,0,0,0);
+        return d;
       }
-    }
-    return results;
-  }
 
-  /* ---------- SCBA Weekly ---------- */
-  function computeScbaLabels(unit){
-    if (!unit) return [];
-    const m = unit.match(/^([ETR])-(\d+)$/i);
-    if (!m) return ['SCBA-01','SCBA-02','SCBA-03','SCBA-04'];
-    const kind = m[1].toUpperCase(); const num  = m[2];
-    if (kind === 'R' && num === '1') return ['RS-101','RS-102','RS-103','RS-104','RS-105'];
-    const prefix = (kind === 'E') ? 'E' : 'T';
-    return [`${prefix}-${num}01`, `${prefix}-${num}02`, `${prefix}-${num}03`, `${prefix}-${num}04`];
-  }
-  function buildSCBATable(){
-    const tb = $('#scba_tbl tbody'); tb.innerHTML='';
-    const labels = computeScbaLabels(getUnit());
-    const reserveOpts = (META.reserveSCBA||[]).map(x=>`<option value="${x}">${x}</option>`).join('');
-    labels.forEach(lab=>{
-      const tr = document.createElement('tr');
-      tr.dataset.base = lab;
-      tr.innerHTML = `
-        <td><strong>${lab}</strong></td>
-        <td><select class="scba-res"><option value="">—</option>${reserveOpts}</select></td>
-        <td><input type="number" class="scba-psi" min="0" max="4500" step="50"></td>
-        <td><select class="scba-pass"><option>Pass</option><option>Fail</option></select></td>
-        <td><input type="text" class="scba-notes" placeholder="Notes (optional)"></td>`;
-      tb.appendChild(tr);
-    });
-  }
+      function daysUntil(expStr){
+        if (!expStr) return null;
+        const exp = new Date(expStr + "T00:00:00");
+        const diff = exp.getTime() - todayMidnight().getTime();
+        return Math.floor(diff / MS_PER_DAY);
+      }
 
-  /* ---------- Saws ---------- */
-  function sawAddRow(type='Roof', num='', fuel='', oil='', runs='Yes', notes=''){
-    const tb = $('#saw_tbl tbody');
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><select class="saw-type"><option ${type==='Roof'?'selected':''}>Roof</option><option ${type==='Rotary'?'selected':''}>Rotary</option></select></td>
-      <td><input type="number" class="saw-num" min="1" step="1" value="${num}"></td>
-      <td><input type="number" class="saw-fuel" min="0" max="100" step="1" value="${fuel}"></td>
-      <td><input type="number" class="saw-oil" min="0" max="100" step="1" value="${oil}"></td>
-      <td><select class="saw-runs"><option ${runs==='Yes'?'selected':''}>Yes</option><option ${runs==='No'?'selected':''}>No</option></select></td>
-      <td><input type="text" class="saw-notes" placeholder="Notes (optional)" value="${notes}"></td>
-      <td style="text-align:center"><button class="btn link saw-del">✕</button></td>`;
-    tb.appendChild(tr);
-    tr.querySelector('.saw-del').addEventListener('click', ()=> tr.remove());
-  }
-  document.getElementById('saw_add').addEventListener('click', ()=> sawAddRow());
+      // Green: >30, Yellow: 15-30, Red: <=14
+      function expBucket(expStr){
+        const d = daysUntil(expStr);
+        if (d === null) return null;
+        if (d <= 14) return "red";
+        if (d <= 30) return "yellow";
+        return "green";
+      }
 
-  /* ---------- Submit handlers ---------- */
-  document.getElementById('btnSubmitAppr').addEventListener('click', ()=>{
-    if(!ensureSubmitter()) return;
-    const btn = document.getElementById('btnSubmitAppr');
-    setBusy(btn, true);
+      function applyDrugHighlight(tr){
+        const expInput = tr.querySelector('.md-exp');
+        if (!expInput) return;
 
-    const payload = {
-      submitter:getSubmitter(), station:getStation(), unit:getUnit(),
-      mileage:Number($('#ap_mileage').value||0), engineHours:Number($('#ap_enghrs').value||0),
-      fuel:Number($('#ap_fuel').value||0), def:Number($('#ap_def').value||0), tank:Number($('#ap_tank').value||0),
-    };
+        const bucket = expBucket(expInput.value || "");
+        tr.classList.remove('exp-green','exp-yellow','exp-red');
 
-    const rows = Array.from($('#ap_checks tbody').rows);
-    const toKey = s => s.toLowerCase().replace(/\W+/g,'');
-    const map = {};
-    [
-      "Knox Box Keys","Portable Radios (4)","Lights","SCBA (4)","Spare Bottles","RIT Pack",
-      "Flash Lights","TIC (4)","Gas Monitor","Hand Tools","Hydra-Ram","Ground Ladders","Passports/Shields"
-    ].forEach((name,i)=>{
-      const r = rows[i];
-      map[toKey(name)] = { passFail: r.cells[1].querySelector('select').value, notes: r.cells[2].querySelector('input').value || '' };
-    });
+        if (bucket === "green") tr.classList.add('exp-green');
+        if (bucket === "yellow") tr.classList.add('exp-yellow');
+        if (bucket === "red") tr.classList.add('exp-red');
+      }
 
-    payload.knox = map['knoxboxkeys']; payload.radios = map['portableradios4']; payload.lights = map['lights'];
-    payload.scba = map['scba4']; payload.spareBottles = map['sparebottles']; payload.rit = map['ritpack'];
-    payload.flashlights = map['flashlights']; payload.tic = map['tic4']; payload.gasMonitor = map['gasmonitor'];
-    payload.handTools = map['handtools']; payload.hydraRam = map['hydram']; payload.groundLadders = map['groundladders'];
-    payload.passports = map['passportsshields'];
+      function hookMedTable(){
+        const tbl = document.querySelector('#md_drugs');
+        const legend = document.querySelector('#drugLegend');
 
-    google.script.run.withSuccessHandler(()=>{ toast('Apparatus Daily saved'); showSaved(btn); maybeAdvance('appr'); })
-      .withFailureHandler(err=>{ toast('Error: '+(err?.message||err)); setBusy(btn,false); })
-      .submitApparatusDaily(payload);
-  });
+        if (!tbl) return false;
 
-  document.getElementById('btnSubmitMed').addEventListener('click', ()=>{
-    if(!ensureSubmitter()) return;
-    const btn = document.getElementById('btnSubmitMed');
-    setBusy(btn, true);
+        // show legend once med table exists
+        if (legend) legend.style.display = '';
 
-    const drugs = Array.from($('#md_drugs tbody').rows).map(r=>{
-      const name = r.querySelector('.md-name').value;
-      const qty  = Number(r.querySelector('.md-qty').value||0);
-      const exp  = r.querySelector('.md-exp').value || '';
-      return name ? {name, qty, exp} : null;
-    }).filter(Boolean);
+        const tbody = tbl.querySelector('tbody');
+        if (!tbody) return true;
 
-    const payload = {
-      submitter:getSubmitter(), station:getStation(), unit:getUnit(),
-      o2:Number($('#md_o2').value||0), airwayPassFail:$('#md_airway').value, airwayNotes:$('#md_airwayNotes').value||'',
-      drugs
-    };
-
-    // Expiration email workflow (matches your other app)
-    const expiring = getExpiringMeds(drugs);
-    const stationName = getStationName();
-
-    const saveRow = () => {
-      google.script.run.withSuccessHandler(()=>{ toast('Medical Daily saved'); showSaved(btn); maybeAdvance('med'); })
-        .withFailureHandler(err=>{ toast('Error: '+(err?.message||err)); setBusy(btn,false); })
-        .submitMedicalDaily(payload);
-    };
-
-    if (!expiring.length){
-      saveRow();
-      return;
-    }
-
-    google.script.run
-      .withSuccessHandler((res)=>{
-        if (res && res.hasRecent){
-          alert(`A med expiration email was already sent for ${stationName} / ${payload.unit} on ${res.lastDateStr} by ${res.lastSubmitter}.`);
-          saveRow();
-          return;
-        }
-
-        const replacements = promptReplacementCounts(expiring, payload.unit);
-        if (replacements.length){
-          google.script.run
-            .withSuccessHandler(()=>{ /* email logged on server */ })
-            .withFailureHandler(()=>{ /* fail open */ })
-            .notifyExpiringMeds({
-              station: stationName,
-              unit: payload.unit,
-              submitter: payload.submitter,
-              items: replacements
-            });
-        }
-
-        saveRow();
-      })
-      .withFailureHandler(()=>{
-        // fail open: still allow prompt/email attempt then save
-        try{
-          const replacements = promptReplacementCounts(expiring, payload.unit);
-          if (replacements.length){
-            google.script.run
-              .withSuccessHandler(()=>{})
-              .withFailureHandler(()=>{})
-              .notifyExpiringMeds({
-                station: stationName,
-                unit: payload.unit,
-                submitter: payload.submitter,
-                items: replacements
-              });
+        // initial pass + listeners
+        Array.from(tbody.querySelectorAll('tr')).forEach(tr => {
+          const expInput = tr.querySelector('.md-exp');
+          if (expInput && !expInput.__dfd_bound){
+            expInput.__dfd_bound = true;
+            expInput.addEventListener('change', () => applyDrugHighlight(tr));
+            expInput.addEventListener('input',  () => applyDrugHighlight(tr));
           }
-        } catch(e){}
-        saveRow();
-      })
-      .getMedAlertStatus({ station: stationName, unit: payload.unit });
-  });
+          applyDrugHighlight(tr);
+        });
 
-  document.getElementById('btnSubmitSCBA').addEventListener('click', ()=>{
-    if(!ensureSubmitter()) return;
-    const btn = document.getElementById('btnSubmitSCBA');
-    setBusy(btn, true);
+        return true;
+      }
 
-    const entries = Array.from($('#scba_tbl tbody').rows).map(r=>{
-      const base = r.dataset.base || '';
-      const reserve = r.querySelector('.scba-res').value || '';
-      const label = reserve || base;
-      return {
-        label,
-        psi: Number(r.querySelector('.scba-psi').value||0),
-        passFail: r.querySelector('.scba-pass').value,
-        notes: r.querySelector('.scba-notes').value || ''
-      };
-    });
+      // Observe for med form being rendered dynamically into #formArea
+      const obs = new MutationObserver(() => {
+        hookMedTable();
+      });
 
-    const payload = { submitter:getSubmitter(), station:getStation(), unit:getUnit(), entries };
+      obs.observe(document.body, { childList:true, subtree:true });
 
-    google.script.run.withSuccessHandler(()=>{ toast('SCBA Weekly saved'); showSaved(btn); maybeAdvance('scba'); })
-      .withFailureHandler(err=>{ toast('Error: '+(err?.message||err)); setBusy(btn,false); })
-      .submitScbaWeekly(payload);
-  });
-
-  document.getElementById('btnSubmitPump').addEventListener('click', ()=>{
-    if(!ensureSubmitter()) return;
-    const btn = document.getElementById('btnSubmitPump');
-    setBusy(btn, true);
-
-    const payload = {
-      submitter:getSubmitter(), station:getStation(), unit:getUnit(),
-      pumpShift:$('#pm_shift').value, throttle:$('#pm_throttle').value, relief:$('#pm_relief').value, gauges:$('#pm_gauges').value,
-      overall:($('#pm_shift').value==='Pass' && $('#pm_throttle').value==='Pass' && $('#pm_relief').value==='Pass' && $('#pm_gauges').value==='Pass') ? 'Pass' : 'Fail',
-      notes:$('#pm_notes').value||''
-    };
-
-    google.script.run.withSuccessHandler(()=>{ toast('Pump Weekly saved'); showSaved(btn); maybeAdvance('pump'); })
-      .withFailureHandler(err=>{ toast('Error: '+(err?.message||err)); setBusy(btn,false); })
-      .submitPumpWeekly(payload);
-  });
-
-  document.getElementById('btnSubmitAerial').addEventListener('click', ()=>{
-    if(!ensureSubmitter()) return;
-    const btn = document.getElementById('btnSubmitAerial');
-    setBusy(btn, true);
-
-    const payload = { submitter:getSubmitter(), station:getStation(), unit:getUnit(),
-      masterSwitch: $('#aw_ms').value, modeSwitch: $('#aw_mode').value,
-      outriggers: $('#aw_out').value, outriggersLube: $('#aw_lube').value
-    };
-
-    google.script.run.withSuccessHandler(()=>{ toast('Aerial Weekly saved'); showSaved(btn); maybeAdvance('aerial'); })
-      .withFailureHandler(err=>{ toast('Error: '+(err?.message||err)); setBusy(btn,false); })
-      .submitAerialWeekly(payload);
-  });
-
-  document.getElementById('btnSubmitSaw').addEventListener('click', ()=>{
-    if(!ensureSubmitter()) return;
-    const btn = document.getElementById('btnSubmitSaw');
-    setBusy(btn, true);
-
-    const entries = Array.from($('#saw_tbl tbody').rows).map(r=>({
-      type:r.querySelector('.saw-type').value,
-      number:Number(r.querySelector('.saw-num').value||0),
-      fuel:Number(r.querySelector('.saw-fuel').value||0),
-      barOil:Number(r.querySelector('.saw-oil').value||0),
-      runs:r.querySelector('.saw-runs').value,
-      notes:r.querySelector('.saw-notes').value||''
-    })).filter(x=>x.number>0);
-
-    if(!entries.length){ toast('Add at least one saw row'); setBusy(btn,false); return; }
-
-    const payload = { submitter:getSubmitter(), station:getStation(), unit:getUnit(), entries };
-
-    google.script.run.withSuccessHandler(()=>{ toast('Saws Weekly saved'); showSaved(btn); maybeAdvance('saw'); })
-      .withFailureHandler(err=>{ toast('Error: '+(err?.message||err)); setBusy(btn,false); })
-      .submitSawWeekly(payload);
-  });
-
-  document.getElementById('btnSubmitBat').addEventListener('click', ()=>{
-    if(!ensureSubmitter()) return;
-    const btn = document.getElementById('btnSubmitBat');
-    setBusy(btn, true);
-
-    const payload = {
-      submitter:getSubmitter(), station:getStation(), unit:getUnit(),
-      batteryTools:$('#bt_tools').value, gasMonitorCharged:$('#bt_gas').value, unitPhoneCharged:$('#bt_phone').value,
-      notes:$('#bt_notes').value||''
-    };
-
-    google.script.run.withSuccessHandler(()=>{ toast('Batteries saved'); showSaved(btn); maybeAdvance('bat'); })
-      .withFailureHandler(err=>{ toast('Error: '+(err?.message||err)); setBusy(btn,false); })
-      .submitBatteriesWeekly(payload);
-  });
-
-  document.getElementById('btnSubmitOSSU').addEventListener('click', ()=>{
-    if(!ensureSubmitter()) return;
-    const btn = document.getElementById('btnSubmitOSSU');
-    setBusy(btn, true);
-
-    const payload = {
-      submitter:getSubmitter(), station:getStation(), unit:getUnit(),
-      reason:$('#ou_reason').value||'', replacementReserve:$('#ou_replace').value||'',
-      equipmentMoved:$('#ou_moved').value||'', rtsDate:$('#ou_rts').value||''
-    };
-
-    google.script.run.withSuccessHandler(()=>{ toast('Unit OOS saved'); showSaved(btn); maybeAdvance('ossu'); })
-      .withFailureHandler(err=>{ toast('Error: '+(err?.message||err)); setBusy(btn,false); })
-      .submitOutOfServiceUnit(payload);
-  });
-
-  document.getElementById('btnSubmitOSSE').addEventListener('click', ()=>{
-    if(!ensureSubmitter()) return;
-    const btn = document.getElementById('btnSubmitOSSE');
-    setBusy(btn, true);
-
-    const payload = {
-      submitter:getSubmitter(), station:getStation(), unit:getUnit(),
-      type:$('#oe_type').value, identifier:$('#oe_id').value||'', reason:$('#oe_reason').value||'',
-      replacement:$('#oe_repl').value||'', rtsDate:$('#oe_rts').value||''
-    };
-
-    google.script.run.withSuccessHandler(()=>{ toast('Equipment OOS saved'); showSaved(btn); maybeAdvance('osse'); })
-      .withFailureHandler(err=>{ toast('Error: '+(err?.message||err)); setBusy(btn,false); })
-      .submitOutOfServiceEquipment(payload);
-  });
-
-  function boot(){
-    buildApChecks();
-    medBuildRowsFromDefaults();
-    initStations();
-    switchTab('appr');
-  }
-  document.addEventListener('DOMContentLoaded', boot);
-</script>
+      // best-effort initial run
+      hookMedTable();
+    })();
+  </script>
 </body>
 </html>
