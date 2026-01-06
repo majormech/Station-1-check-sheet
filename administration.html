@@ -9,24 +9,32 @@
       --brand:#c41212; --brand-ink:#fff; --ink:#111; --muted:#666;
       --bg:#fafafa; --card:#ffffff; --ok:#1f9d55; --bad:#c81e1e; --warn:#b37b00;
       --line:#eee;
+      --radius:12px;
     }
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial}
     h1{font-size:20px;margin:0}
     h2{font-size:16px;margin:0 0 8px}
     .wrap{max-width:1200px;margin:18px auto;padding:0 14px}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.04);overflow:hidden}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 1px 2px rgba(0,0,0,.04);overflow:hidden}
     .header{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
     .brand{display:inline-flex;align-items:center;gap:10px}
     .brand-badge{width:28px;height:28px;border-radius:8px;background:var(--brand)}
     .grow{flex:1 1 auto}
     .row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
     label{font-weight:700}
+
+    /* Bigger tap targets for mobile */
     select,input[type="text"],textarea{
-      border:1px solid #ddd;border-radius:10px;padding:9px 10px;outline:none;background:#fff;min-width:160px;min-height:38px;font:inherit
+      border:1px solid #ddd;border-radius:10px;padding:9px 10px;outline:none;background:#fff;
+      min-width:160px;min-height:44px;font:inherit
     }
-    textarea{min-height:70px;resize:vertical;min-width:320px}
-    .btn{appearance:none;border:none;border-radius:10px;padding:9px 14px;font-weight:800;cursor:pointer;background:var(--brand);color:#fff}
+    textarea{min-height:90px;resize:vertical;min-width:320px}
+    .btn{
+      appearance:none;border:none;border-radius:10px;padding:11px 14px;
+      min-height:44px;
+      font-weight:900;cursor:pointer;background:var(--brand);color:#fff
+    }
     .btn:disabled{opacity:.5;cursor:not-allowed}
     .panel{padding:14px 16px}
     .note{color:var(--muted);font-size:12px}
@@ -127,24 +135,9 @@
       flex-wrap:wrap;
     }
     .unit-title{font-weight:900}
-    .unit-meta{display:flex;gap:8px;flex-wrap:wrap}
     .unit-count{font-weight:900;opacity:.65}
     .unit-body{padding:10px 10px 12px}
 
-    .badge{
-      display:inline-block;
-      padding:2px 8px;
-      border-radius:999px;
-      font-size:12px;
-      font-weight:800;
-    }
-    .badge.b-new{background:rgba(200,30,30,.10);border:1px solid rgba(200,30,30,.20)}
-    .badge.b-old{background:rgba(179,123,0,.10);border:1px solid rgba(179,123,0,.20)}
-    .badge.b-ack{background:rgba(31,157,85,.10);border:1px solid rgba(31,157,85,.20)}
-
-    .unit-dot{
-      width:10px;height:10px;border-radius:999px;display:inline-block;
-    }
     .unit-state{
       font-weight:900;
       font-size:12px;
@@ -152,13 +145,11 @@
       border-radius:999px;
       border:1px solid rgba(0,0,0,.08);
     }
-
     /* Priority: NEW > OLD > OK */
     .u-new{background:#ff3b30 !important; color:#111}
     .u-old{background:#ffcc00 !important; color:#111}
     .u-ok {background:#34c759 !important; color:#111}
 
-    /* Chevron */
     .chev{
       width:22px;height:22px;
       display:inline-flex;
@@ -171,10 +162,83 @@
       transition: transform .18s ease;
     }
     .chev svg{width:14px;height:14px;display:block}
-    /* rotate when open */
     details[open] > summary .chev{ transform: rotate(180deg); }
-    /* make summary hover feel clickable */
     .unit-summary:hover{background:rgba(0,0,0,.02)}
+
+    /* =============================
+       MOBILE FIXES (BIG WIN)
+       ============================= */
+
+    /* Header controls stack nicely on small screens */
+    @media (max-width: 720px){
+      .wrap{margin:10px auto;padding:0 10px}
+      .header{padding:12px}
+      .row{width:100%}
+      .row > div{flex:1 1 100%}
+      .row input[type="text"]{width:100%; min-width:0}
+      #btnRefresh{width:100%}
+    }
+
+    /* Status table: turn each row into a readable “card” on phones */
+    .statusWrap{ margin-top:10px; overflow:auto; max-height:60vh; -webkit-overflow-scrolling:touch; }
+
+    @media (max-width: 820px){
+      /* Keep desktop table for tablets if they want to scroll,
+         but on true phone sizes we convert to cards */
+    }
+
+    @media (max-width: 720px){
+      .statusWrap{overflow:visible; max-height:none}
+
+      table.grid#statusTable thead{display:none}
+      table.grid#statusTable{
+        border:none;
+        background:transparent;
+      }
+      table.grid#statusTable tbody{
+        display:grid;
+        gap:10px;
+      }
+      table.grid#statusTable tr{
+        display:block;
+        background:#fff;
+        border:1px solid var(--line);
+        border-radius:14px;
+        padding:10px;
+        box-shadow:0 2px 10px rgba(0,0,0,.05);
+      }
+      table.grid#statusTable td{
+        display:flex;
+        justify-content:space-between;
+        gap:10px;
+        padding:6px 0;
+        border:none !important;
+      }
+      /* label comes from data-label attr */
+      table.grid#statusTable td::before{
+        content: attr(data-label);
+        color: var(--muted);
+        font-weight:800;
+        flex: 0 0 46%;
+      }
+      table.grid#statusTable td > *{
+        text-align:right;
+      }
+
+      /* Make pills fit better */
+      .pill{justify-content:center}
+    }
+
+    /* Issues area: make controls wrap better on mobile */
+    @media (max-width: 720px){
+      textarea{min-width:0}
+      .emailRow textarea{min-width:0; flex:1 1 100%}
+      .emailRow .btn{width:100%}
+      .issue{flex-direction:column; align-items:stretch}
+      .issue .right{justify-content:flex-start}
+      .issue select{min-width:0; width:100%}
+      .toggle{width:100%}
+    }
   </style>
 </head>
 <body>
@@ -201,7 +265,9 @@
           <div>
             <h2>Quick Status</h2>
             <div class="note">Daily window: 06:40 → 06:40. Weekly window uses the configured day (default Saturday) at 06:40.</div>
-            <div style="margin-top:10px; overflow:auto; max-height: 60vh;">
+
+            <!-- class added for mobile behavior -->
+            <div class="statusWrap">
               <table class="grid" id="statusTable">
                 <thead>
                   <tr>
@@ -274,3 +340,4 @@
   <script src="./administration.js"></script>
 </body>
 </html>
+
