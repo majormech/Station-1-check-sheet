@@ -7,7 +7,7 @@
   <style>
     :root{
       --brand:#c41212; --brand-ink:#fff; --ink:#111; --muted:#666;
-      --bg:#fafafa; --card:#ffffff; --ok:#1f9d55; --bad:#c81e1e; --warn:#c9a100;
+      --bg:#fafafa; --card:#ffffff; --ok:#1f9d55; --bad:#c81e1e; --warn:#b37b00;
       --line:#eee;
     }
     *{box-sizing:border-box}
@@ -22,12 +22,11 @@
     .grow{flex:1 1 auto}
     .row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
     label{font-weight:700}
-    select,input[type="text"]{
+    select,input[type="text"],textarea{
       border:1px solid #ddd;border-radius:10px;padding:9px 10px;outline:none;background:#fff;min-width:160px;min-height:38px;font:inherit
     }
+    textarea{min-height:70px;resize:vertical;min-width:320px}
     .btn{appearance:none;border:none;border-radius:10px;padding:9px 14px;font-weight:800;cursor:pointer;background:var(--brand);color:#fff}
-    .btn.secondary{background:#111}
-    .btn.link{background:transparent;color:var(--brand);padding:0;border-radius:0}
     .btn:disabled{opacity:.5;cursor:not-allowed}
     .panel{padding:14px 16px}
     .note{color:var(--muted);font-size:12px}
@@ -48,21 +47,11 @@
     .pill{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:6px 10px;font-weight:900;font-size:12px}
     .pill.ok{background:rgba(31,157,85,.12);color:var(--ok);border:1px solid rgba(31,157,85,.25)}
     .pill.bad{background:rgba(200,30,30,.12);color:var(--bad);border:1px solid rgba(200,30,30,.25)}
-    .pill.warn{background:rgba(201,161,0,.14);color:var(--warn);border:1px solid rgba(201,161,0,.28)}
-    .pill.na{background:rgba(0,0,0,.06);color:#555;border:1px solid rgba(0,0,0,.08)}
+    .pill.na{background:rgba(120,120,120,.12);color:#555;border:1px solid rgba(120,120,120,.2)}
     .sub{display:block;color:var(--muted);font-size:11px;margin-top:2px}
 
     .two-col{display:grid;grid-template-columns:1fr;gap:12px}
-    @media (min-width: 980px){
-      .two-col{grid-template-columns:1fr 1fr}
-    }
-
-    .box{
-      border:1px solid var(--line);
-      border-radius:12px;
-      padding:12px;
-      background:#fff;
-    }
+    @media (min-width: 980px){ .two-col{grid-template-columns:1fr 1fr} }
 
     .issue{
       border:1px solid var(--line);
@@ -77,14 +66,36 @@
     .issue h3{margin:0 0 2px;font-size:14px}
     .issue .meta{color:var(--muted);font-size:12px}
     .issue select{min-width:160px}
-    .hidden{display:none!important}
+    .issue .right{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+
+    /* Issue highlighting */
+    .issue.hl-new{background:rgba(200,30,30,.10);border-color:rgba(200,30,30,.20)}
+    .issue.hl-old{background:rgba(179,123,0,.10);border-color:rgba(179,123,0,.20)}
+    .issue.hl-ack{background:rgba(31,157,85,.10);border-color:rgba(31,157,85,.20)}
+
+    .toggle{
+      display:inline-flex;gap:8px;align-items:center;
+      font-weight:700;color:#333;font-size:13px;
+      user-select:none;
+    }
+    .toggle input{width:18px;height:18px;min-width:auto;min-height:auto}
 
     .toast{position:fixed;right:16px;bottom:16px;display:flex;gap:10px;align-items:center;background:#111;color:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 6px 24px rgba(0,0,0,.2);opacity:0;transform:translateY(8px);transition:.2s}
     .toast.show{opacity:1;transform:translateY(0)}
 
-    .chkline{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-    .chkline label{font-weight:700;display:flex;gap:8px;align-items:center}
-    .small{font-size:12px;color:var(--muted)}
+    .emailBox{
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px 12px;
+      background:#fff;
+      display:grid;
+      gap:10px;
+      margin-top:10px;
+    }
+    .emailRow{
+      display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;
+    }
+    .emailRow textarea{min-width: 420px; flex: 1 1 420px}
   </style>
 </head>
 <body>
@@ -129,6 +140,27 @@
                 <tbody></tbody>
               </table>
             </div>
+
+            <div class="emailBox">
+              <h2 style="margin:0">Email Recipients</h2>
+              <div class="note">One email per line. Used by Issues + Drug Expiration alerts.</div>
+
+              <div class="emailRow">
+                <div style="flex:1 1 420px">
+                  <label>Issues Email List</label><br/>
+                  <textarea id="issuesEmails" placeholder="one@email.com&#10;two@email.com"></textarea>
+                </div>
+                <button class="btn" id="btnSaveIssuesEmails">Save Issues Emails</button>
+              </div>
+
+              <div class="emailRow">
+                <div style="flex:1 1 420px">
+                  <label>Drug Expiration Email List</label><br/>
+                  <textarea id="drugEmails" placeholder="one@email.com&#10;two@email.com"></textarea>
+                </div>
+                <button class="btn" id="btnSaveDrugEmails">Save Drug Emails</button>
+              </div>
+            </div>
           </div>
 
           <div>
@@ -138,45 +170,14 @@
 
             <div style="height:12px"></div>
 
-            <h2>Email Recipients</h2>
-            <div class="note">Add addresses for <b>Issues</b> and <b>Drugs expiring</b> notifications.</div>
-
-            <div class="box" style="margin-top:10px; display:grid; gap:10px;">
-              <div class="row">
-                <div style="min-width:260px;flex:1">
-                  <label>Email</label><br/>
-                  <input id="emailAddr" type="text" placeholder="name@example.com" style="width:100%">
-                </div>
-                <button class="btn" id="btnEmailSave">Add / Update</button>
-              </div>
-
-              <div class="chkline">
-                <label><input id="emailActive" type="checkbox" checked> Active</label>
-                <label><input id="emailIssues" type="checkbox" checked> Issues</label>
-                <label><input id="emailDrugs" type="checkbox"> Drugs expiring</label>
-                <span class="small">Tip: one address can receive both.</span>
-              </div>
-
-              <div style="overflow:auto; max-height: 260px;">
-                <table class="grid" id="emailsTable">
-                  <thead>
-                    <tr>
-                      <th>Email</th>
-                      <th>Active</th>
-                      <th>Issues</th>
-                      <th>Drugs expiring</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody></tbody>
-                </table>
-              </div>
-            </div>
-
-            <div style="height:12px"></div>
-
             <h2>Issues</h2>
-            <div class="note">Set to <b>Resolved</b> to remove from both UIs and log who/when.</div>
+            <div class="note">
+              Status:
+              <b>NEW</b> (red) •
+              <b>OLD</b> (auto after 96 hours, yellow) •
+              <b>ACK</b> (checkbox = green) •
+              <b>RESOLVED</b> removes it everywhere and logs who/when.
+            </div>
             <div id="issuesBox" style="display:grid;gap:10px;margin-top:10px"></div>
           </div>
         </div>
