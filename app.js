@@ -30,7 +30,6 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
-/* ---------------- Drug date helpers + color rules ---------------- */
 function parseYMD(s) {
   // Expect "yyyy-MM-dd"
   const m = String(s || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -66,23 +65,6 @@ function prettyDaysLabel(expYmd) {
   return `${d}d`;
 }
 
-function applyDrugColorToRow(rowEl) {
-  if (!rowEl) return;
-
-  // "Exp" input value if user changed it; otherwise fallback to last-known stored on row
-  const expVal = String(rowEl.querySelector(".drugExp")?.value || "").trim();
-  const lastKnown = String(rowEl.getAttribute("data-last-exp") || "").trim();
-  const effective = expVal || lastKnown;
-
-  rowEl.classList.remove("drugRed", "drugYellow", "drugGreen");
-  const cls = drugClassForExp(effective);
-  if (cls) rowEl.classList.add(cls);
-
-  const badge = rowEl.querySelector(".drugDays");
-  if (badge) badge.textContent = effective ? prettyDaysLabel(effective) : "";
-}
-
-/* ---------------- API helpers ---------------- */
 async function apiGet(params) {
   const qs = new URLSearchParams(params);
   const res = await fetch(`/api?${qs.toString()}`, { method: "GET" });
@@ -315,6 +297,58 @@ async function loadDrugMaster(unit) {
   DRUG_MASTER = map;
 }
 
+/* ---------------- Daily checklist helpers ---------------- */
+function renderDailyItem_(label, key) {
+  return `
+    <div class="drugRow" style="margin-top:10px">
+      <div style="font-weight:800;margin-bottom:8px">${escapeHtml(label)}</div>
+      <div class="row">
+        <div>
+          <label style="margin-top:0">Pass / Fail</label>
+          <select class="dailyPassFail" data-key="${escapeHtml(key)}">
+            <option value="Pass">Pass</option>
+            <option value="Fail">Fail</option>
+          </select>
+        </div>
+        <div>
+          <label style="margin-top:0">Notes</label>
+          <input class="dailyNotes" data-key="${escapeHtml(key)}" placeholder="Notes (optional)" />
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function readDailyItems_() {
+  const payload = {};
+  document.querySelectorAll("#formArea .dailyPassFail").forEach(sel => {
+    const key = sel.getAttribute("data-key");
+    if (!key) return;
+    payload[key] = payload[key] || {};
+    payload[key].passFail = sel.value || "Pass";
+  });
+
+  document.querySelectorAll("#formArea .dailyNotes").forEach(inp => {
+    const key = inp.getAttribute("data-key");
+    if (!key) return;
+    payload[key] = payload[key] || {};
+    payload[key].notes = inp.value || "";
+  });
+
+  // Ensure every key exists
+  const keys = [
+    "knox","radios","lights","scba","spareBottles","rit","flashlights",
+    "tic","gasMonitor","handTools","hydraRam","groundLadders","passports"
+  ];
+  for (const k of keys) {
+    payload[k] = payload[k] || { passFail: "Pass", notes: "" };
+    payload[k].passFail = payload[k].passFail || "Pass";
+    payload[k].notes = payload[k].notes || "";
+  }
+
+  return payload;
+}
+
 /* ---------------- Form rendering ---------------- */
 function formWrap(html) {
   return `<div>${html}</div>`;
@@ -332,17 +366,32 @@ function renderForm() {
 
   if (type === "apparatusDaily") {
     area.innerHTML = formWrap(`
-      <div class="muted">Basic apparatus daily values (expand as needed).</div>
+      <div class="muted" style="margin-bottom:10px">
+        Full apparatus daily checklist.
+      </div>
+
       <label>Mileage</label><input id="mileage" type="number" min="0" />
       <label>Engine Hours</label><input id="engineHours" type="number" min="0" />
       <label>Fuel %</label><input id="fuel" type="number" min="0" max="100" />
       <label>DEF %</label><input id="def" type="number" min="0" max="100" />
       <label>Tank Water %</label><input id="tank" type="number" min="0" max="100" />
 
-      <div class="muted" style="margin-top:10px">
-        This is the “lite” version of the daily form. If you want the full checklist items (Knox keys, radios, etc.)
-        I can wire every one of your existing fields here.
-      </div>
+      <div class="hr"></div>
+      <div style="font-weight:900;margin-bottom:8px">Checklist Items</div>
+
+      ${renderDailyItem_("Knox Box Keys", "knox")}
+      ${renderDailyItem_("Portable Radios (4)", "radios")}
+      ${renderDailyItem_("Lights", "lights")}
+      ${renderDailyItem_("SCBA (4)", "scba")}
+      ${renderDailyItem_("Spare Bottles", "spareBottles")}
+      ${renderDailyItem_("RIT Pack", "rit")}
+      ${renderDailyItem_("Flash Lights", "flashlights")}
+      ${renderDailyItem_("TIC (4)", "tic")}
+      ${renderDailyItem_("Gas Monitor", "gasMonitor")}
+      ${renderDailyItem_("Hand Tools", "handTools")}
+      ${renderDailyItem_("Hydra-Ram", "hydraRam")}
+      ${renderDailyItem_("Ground Ladders", "groundLadders")}
+      ${renderDailyItem_("Passports/Shields", "passports")}
     `);
     return;
   }
@@ -354,25 +403,17 @@ function renderForm() {
     const rows = drugs.map((name) => {
       const last = DRUG_MASTER[name] || "";
       const qty = (defaultQty[name] ?? "");
-
-      // Effective exp for initial coloring = last known (input starts at last)
-      const effectiveExp = String(last || "").trim();
-      const cls = drugClassForExp(effectiveExp);
-      const daysLbl = effectiveExp ? prettyDaysLabel(effectiveExp) : "";
+      const cls = drugClassForExp(last);
+      const days = prettyDaysLabel(last);
 
       return `
-        <div class="drugRow ${cls}" data-drug="${escapeHtml(name)}" data-last-exp="${escapeHtml(last)}">
-          <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">
-            <div style="min-width:220px">
-              <div style="font-weight:800">${escapeHtml(name)}</div>
-              <div class="muted" style="margin:4px 0 0">
-                Last known Exp: <b>${escapeHtml(last || "—")}</b>
-                ${daysLbl ? `<span class="pill" style="margin-left:8px"><span class="drugDays">${escapeHtml(daysLbl)}</span></span>` : `<span class="pill" style="margin-left:8px"><span class="drugDays"></span></span>`}
-              </div>
-            </div>
+        <div class="drugRow ${cls}" data-drug="${escapeHtml(name)}">
+          <div style="font-weight:800">${escapeHtml(name)}</div>
+          <div class="muted" style="margin:4px 0 10px">
+            Last known Exp: <b>${escapeHtml(last || "—")}</b>
+            ${days ? ` <span class="pill" style="margin-left:6px">${escapeHtml(days)}</span>` : ``}
           </div>
-
-          <div class="row" style="margin-top:10px">
+          <div class="row">
             <div>
               <label style="margin-top:0">Qty</label>
               <input class="drugQty" type="number" min="0" value="${escapeHtml(qty)}" />
@@ -402,25 +443,22 @@ function renderForm() {
       <div class="hr"></div>
       <div style="font-weight:800; margin-bottom:8px">Medications</div>
       <div class="muted" style="margin-bottom:10px">
-        Color coding: <b>Red</b> &lt; 14 days • <b>Yellow</b> &lt; 30 days • <b>Green</b> ≥ 30 days.
+        Exp defaults to last known expiration if available. Update as needed.
       </div>
       ${rows || `<div class="muted">No drug list found in config.</div>`}
     `);
 
-    // Live recolor on date change
-    area.querySelectorAll(".drugExp").forEach(inp => {
-      inp.addEventListener("change", (e) => {
-        const row = e.target.closest(".drugRow");
-        applyDrugColorToRow(row);
-      });
-      inp.addEventListener("input", (e) => {
-        const row = e.target.closest(".drugRow");
-        applyDrugColorToRow(row);
+    // Live color update when Exp changes
+    area.querySelectorAll(".drugRow").forEach(row => {
+      const expInput = row.querySelector(".drugExp");
+      if (!expInput) return;
+      expInput.addEventListener("change", () => {
+        const v = expInput.value || "";
+        row.classList.remove("drugRed","drugYellow","drugGreen");
+        const cls = drugClassForExp(v);
+        if (cls) row.classList.add(cls);
       });
     });
-
-    // Ensure colors correct even if browser formats date oddly
-    area.querySelectorAll(".drugRow").forEach(row => applyDrugColorToRow(row));
 
     return;
   }
@@ -535,12 +573,7 @@ function readMedicalDailyPayload() {
   document.querySelectorAll("#formArea .drugRow").forEach(row => {
     const name = row.getAttribute("data-drug") || "";
     const qty = Number(row.querySelector(".drugQty")?.value || 0);
-
-    // Prefer user-entered exp; if blank, fallback to last known (so save won't drop dates)
-    const expInput = String(row.querySelector(".drugExp")?.value || "").trim();
-    const lastKnown = String(row.getAttribute("data-last-exp") || "").trim();
-    const exp = expInput || lastKnown;
-
+    const exp = String(row.querySelector(".drugExp")?.value || "").trim();
     if (name && exp) drugsPayload.push({ name, qty, exp });
   });
 
@@ -593,12 +626,28 @@ async function onSave() {
   let checkPayload = {};
 
   if (type === "apparatusDaily") {
+    const items = readDailyItems_();
     checkPayload = {
       mileage: Number($("#mileage")?.value || 0),
       engineHours: Number($("#engineHours")?.value || 0),
       fuel: Number($("#fuel")?.value || 0),
       def: Number($("#def")?.value || 0),
       tank: Number($("#tank")?.value || 0),
+
+      // Checklist items (matches Code.gs submitApparatusDaily_ expectations)
+      knox: items.knox,
+      radios: items.radios,
+      lights: items.lights,
+      scba: items.scba,
+      spareBottles: items.spareBottles,
+      rit: items.rit,
+      flashlights: items.flashlights,
+      tic: items.tic,
+      gasMonitor: items.gasMonitor,
+      handTools: items.handTools,
+      hydraRam: items.hydraRam,
+      groundLadders: items.groundLadders,
+      passports: items.passports
     };
   } else if (type === "medicalDaily") {
     checkPayload = readMedicalDailyPayload();
@@ -675,7 +724,7 @@ async function onSave() {
   // Refresh drug master after medical save (so last-known updates)
   if (type === "medicalDaily") {
     await loadDrugMaster(ap);
-    renderForm(); // re-render so Last Known Exp updates visually + recolor
+    renderForm(); // re-render so Last Known Exp updates visually
   }
 
   setStatus("Saved ✅");
