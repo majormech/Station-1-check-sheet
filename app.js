@@ -1,5 +1,6 @@
 // app.js — Decatur Fire Checks (Alpha)
 // Station -> Apparatus selector, Active Issues list, email only when New Issue is entered (handled server-side)
+// Medical drug expiration: row highlighting + optional med-expiration email workflow (≤14 days, anti-spam 21 days)
 // NO API keys
 
 const api = {
@@ -20,6 +21,20 @@ const api = {
   },
   async saveCheck(payload) {
     return fetchJson(`/api`, { method: "POST", body: JSON.stringify(payload) });
+  },
+
+  // NEW: med email endpoints (POST)
+  async getMedAlertStatus(stationName, unit) {
+    return fetchJson(`/api`, {
+      method: "POST",
+      body: JSON.stringify({ action: "getMedAlertStatus", station: stationName, unit })
+    });
+  },
+  async notifyExpiringMeds(payload) {
+    return fetchJson(`/api`, {
+      method: "POST",
+      body: JSON.stringify({ action: "notifyExpiringMeds", ...payload })
+    });
   }
 };
 
@@ -50,6 +65,150 @@ const CHECK_TYPES_MASTER = [
   { value: "oosUnit", label: "Out of Service — Unit" },
   { value: "oosEquipment", label: "Out of Service — Equipment" }
 ];
+
+/* ---------------- Drug expiration highlighting ---------------- */
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function todayMidnight_() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function daysUntilExp_(expStr) {
+  if (!expStr) return null;
+  // expStr expected "YYYY-MM-DD"
+  const exp = new Date(expStr + "T00:00:00");
+  const diff = exp.getTime() - todayMidnight_().getTime();
+  return Math.floor(diff / MS_PER_DAY);
+}
+
+// Green: >30 days
+// Yellow: 15-30 days
+// Red: <=14 days (or expired)
+function expBucket_(expStr) {
+  const days = daysUntilExp_(expStr);
+  if (days === null) return null;
+  if (days <= 14) return "red";
+  if (days <= 30) return "yellow";
+  return "green";
+}
+
+function ensureDrugStyles_() {
+  if (document.getElementById("dfd-drug-exp-style")) return;
+  const st = document.createElement("style");
+  st.id = "dfd-drug-exp-style";
+  st.textContent = `
+    /* Drug row highlight without changing layout */
+    [data-drug-row].exp-green { background: rgba(31,157,85,.10); border-radius: 12px; padding: 8px; }
+    [data-drug-row].exp-yellow{ background: rgba(176,125,0,.12); border-radius: 12px; padding: 8px; }
+    [data-drug-row].exp-red   { background: rgba(200,30,30,.12); border-radius: 12px; padding: 8px; }
+
+    /* Keep spacing consistent */
+    [data-drug-row] { transition: background .15s ease; }
+
+    .dfd-exp-legend {
+      display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+      margin: 8px 0 12px;
+      color:#666; font-size:13px;
+    }
+    .dfd-exp-legend .k { display:inline-flex; gap:8px; align-items:center; }
+    .dfd-exp-dot { width:10px; height:10px; border-radius:999px; display:inline-block; }
+    .dfd-exp-dot.g { background: rgba(31,157,85,.9); }
+    .dfd-exp-dot.y { background: rgba(176,125,0,.9); }
+    .dfd-exp-dot.r { background: rgba(200,30,30,.9); }
+  `;
+  document.head.appendChild(st);
+}
+
+function addDrugLegend_() {
+  // Only add once per render of Medical Daily
+  if (el.formArea.querySelector(".dfd-exp-legend")) return;
+  const legend = document.createElement("div");
+  legend.className = "dfd-exp-legend";
+  legend.innerHTML = `
+    <span class="k"><span class="dfd-exp-dot g"></span> Exp > 30 days (Green)</span>
+    <span class="k"><span class="dfd-exp-dot y"></span> Exp 15–30 days (Yellow)</span>
+    <span class="k"><span class="dfd-exp-dot r"></span> Exp ≤ 14 days / expired (Red)</span>
+  `;
+
+  // Place right under the "Drugs" header if found, otherwise at top of form
+  const h3 = el.formArea.querySelector("h3");
+  if (h3 && h3.parentNode) {
+    h3.insertAdjacentElement("afterend", legend);
+  } else {
+    el.formArea.prepend(legend);
+  }
+}
+
+function applyDrugRowHighlight_(row) {
+  const expInput = row.querySelector("[data-drug-exp]");
+  if (!expInput) return;
+  const bucket = expBucket_(expInput.value || "");
+
+  row.classList.remove("exp-green", "exp-yellow", "exp-red");
+  if (bucket === "green") row.classList.add("exp-green");
+  if (bucket === "yellow") row.classList.add("exp-yellow");
+  if (bucket === "red") row.classList.add("exp-red");
+}
+
+function wireDrugExpirationHighlighting_() {
+  ensureDrugStyles_();
+  addDrugLegend_();
+
+  const rows = el.formArea.querySelectorAll("[data-drug-row]");
+  rows.forEach(row => {
+    const expInput = row.querySelector("[data-drug-exp]");
+    if (!expInput) return;
+
+    if (!expInput.__dfd_bound) {
+      expInput.__dfd_bound = true;
+      expInput.addEventListener("change", () => applyDrugRowHighlight_(row));
+      expInput.addEventListener("input", () => applyDrugRowHighlight_(row));
+    }
+    applyDrugRowHighlight_(row);
+  });
+}
+
+/* ---------------- Med expiration email workflow ---------------- */
+function getExpiringMeds14_(drugs) {
+  const today = todayMidnight_();
+  return (drugs || [])
+    .filter(d => d && d.name && d.exp)
+    .map(d => {
+      const expDate = new Date(d.exp + "T00:00:00");
+      const diffDays = (expDate - today) / MS_PER_DAY;
+      return { name: d.name, qty: Number(d.qty || 0), exp: d.exp, daysToExp: diffDays };
+    })
+    .filter(d => d.daysToExp <= 14);
+}
+
+// Prompts one-by-one, only returns items where replaceCount > 0
+function promptReplacementCounts_(expiring, unit) {
+  const results = [];
+  for (const it of expiring) {
+    const name = it.name || "";
+    const exp = it.exp || "";
+    const qty = Number(it.qty || 0);
+
+    const msg =
+      `Medication expiring (≤14 days)\n\n` +
+      `Unit: ${unit}\n` +
+      `Medication: ${name}\n` +
+      `Expires: ${exp}\n` +
+      `Qty on unit: ${qty}\n\n` +
+      `How many replacements to request? (0 = none)`;
+
+    const resp = window.prompt(msg, String(qty || 0));
+    if (resp === null) continue; // user canceled that line
+
+    const n = Number(resp);
+    if (!isNaN(n) && n > 0) {
+      results.push({ name, exp, qty, replaceCount: n });
+    }
+  }
+  return results;
+}
 
 init().catch(err => {
   el.status.textContent = `Init error: ${err.message || err}`;
@@ -149,21 +308,25 @@ async function refreshIssues() {
 }
 
 function updateCheckTypeOptions() {
-  const a = el.apparatus.value || "";
+  const a = (el.apparatus.value || "").toUpperCase();
 
-  // Aerial visible only for Trucks or E-5
+  // Aerial visible only for Trucks or E-5 (adjust as needed)
   const allowAerial = a.startsWith("T-") || a === "E-5";
 
   // Saws hidden for E-1
   const allowSaws = a !== "E-1";
 
-  // Pump (edit rules as needed)
-  const allowPump = a === "E-1" || a === "T-1" || a === "E-5";
+  // Pump weekly: E-1 + all Trucks (T-1/T-2/T-3) + E-5 (adjust as needed)
+  const allowPump = a === "E-1" || a.startsWith("T-") || a === "E-5";
+
+  // R-1 does NOT have Medical Daily / Pump / Aerial (per your admin rules)
+  const allowMedical = a !== "R-1";
 
   const filtered = CHECK_TYPES_MASTER.filter(ct => {
+    if (ct.value === "medicalDaily") return allowMedical;
     if (ct.value === "aerialWeekly") return allowAerial;
     if (ct.value === "sawWeekly") return allowSaws;
-    if (ct.value === "pumpWeekly") return allowPump;
+    if (ct.value === "pumpWeekly") return allowPump && a !== "R-1";
     return true;
   });
 
@@ -191,6 +354,12 @@ function renderForm() {
 
   wireNotesToggles(el.formArea);
   wireScbaNotesToggles(el.formArea);
+
+  // NEW: when Medical Daily is displayed, wire highlighting
+  if (type === "medicalDaily") {
+    // Defer 1 tick so DOM is fully in place
+    setTimeout(() => wireDrugExpirationHighlighting_(), 0);
+  }
 }
 
 async function onSave() {
@@ -206,6 +375,43 @@ async function onSave() {
 
     const checkType = el.checkType.value;
     const checkPayload = readForm(checkType);
+
+    // If medicalDaily, run the expiring-meds email logic (same style as your other app)
+    if (checkType === "medicalDaily") {
+      try {
+        const stationName = (runtime?.stations || []).find(s => s.stationId === stationId)?.stationName
+          || `Station ${stationId}`;
+
+        const drugs = checkPayload?.drugs || [];
+        const expiring = getExpiringMeds14_(drugs);
+
+        if (expiring.length) {
+          // Anti-spam (21 days)
+          const st = await api.getMedAlertStatus(stationName, apparatusId);
+          const hasRecent = !!st?.status?.hasRecent;
+
+          if (!hasRecent) {
+            const replacements = promptReplacementCounts_(expiring, apparatusId);
+            if (replacements.length) {
+              await api.notifyExpiringMeds({
+                station: stationName,
+                unit: apparatusId,
+                submitter,
+                items: replacements
+              });
+            }
+          } else {
+            // Optional: show a simple heads-up without blocking the save
+            // (matches your prior behavior of "already sent recently")
+            // Keep it quiet unless you want it visible:
+            // alert(`A med expiration email was already sent for ${apparatusId} on ${st.status.lastDateStr}.`);
+          }
+        }
+      } catch (medErr) {
+        // Fail-open: don't block the check save if email check fails
+        console.warn("Med email workflow failed (continuing save):", medErr);
+      }
+    }
 
     const payload = {
       action: "saveCheck",
@@ -225,6 +431,12 @@ async function onSave() {
     el.newIssueNote.value = "";
 
     await refreshIssues();
+
+    // Re-apply drug highlights after save (in case you stay on med page)
+    if (checkType === "medicalDaily") {
+      setTimeout(() => wireDrugExpirationHighlighting_(), 0);
+    }
+
     el.status.textContent = resp.issue?.emailed ? "Saved. New issue emailed." : "Saved.";
   } catch (e) {
     el.status.textContent = `Error: ${e.message || e}`;
@@ -620,4 +832,3 @@ async function fetchJson(url, opts) {
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 }
-
