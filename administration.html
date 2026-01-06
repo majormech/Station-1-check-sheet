@@ -157,6 +157,24 @@
     .u-new{background:#ff3b30 !important; color:#111}
     .u-old{background:#ffcc00 !important; color:#111}
     .u-ok {background:#34c759 !important; color:#111}
+
+    /* Chevron */
+    .chev{
+      width:22px;height:22px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      border-radius:999px;
+      border:1px solid rgba(0,0,0,.08);
+      background:#fff;
+      flex:0 0 auto;
+      transition: transform .18s ease;
+    }
+    .chev svg{width:14px;height:14px;display:block}
+    /* rotate when open */
+    details[open] > summary .chev{ transform: rotate(180deg); }
+    /* make summary hover feel clickable */
+    .unit-summary:hover{background:rgba(0,0,0,.02)}
   </style>
 </head>
 <body>
