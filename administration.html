@@ -1,501 +1,442 @@
-/* administration.js — DFD Administration UI
-   Talks ONLY to /api.
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DFD — Administration</title>
+  <style>
+    :root{
+      --brand:#c41212;
+      --brand-ink:#fff;
+      --ink:#111;
+      --muted:#666;
+      --bg:#fafafa;
+      --card:#fff;
+      --line:#e6e6e6;
 
-   GET  /api?action=getConfig
-   GET  /api?action=getAdminStatus
-   GET  /api?action=getWeeklyConfig
-   GET  /api?action=listIssues&stationId=1&includeCleared=false
-   GET  /api?action=getEmailConfig
+      --ok:#1a7f37;
+      --bad:#c81e1e;
+      --na:#6b7280;
 
-   POST /api {action:"setWeeklyDay"...}
-   POST /api {action:"updateIssue"...}
-   POST /api {action:"setEmailConfig", kind:"issuesByStation|drugsAllByStation|drugsPrimaryByStation", stationId:"1", emails:[...], user:"Name"}
-*/
+      --hl-new: #ffe1e1;
+      --hl-old: #fff4cc;
+      --hl-ack: #d8ffe0;
 
-const $ = (s) => document.querySelector(s);
+      --b-new:#c81e1e;
+      --b-old:#b45309;
+      --b-ack:#1a7f37;
+    }
 
-function toast(msg, ms = 2200) {
-  const t = $("#toast");
-  $("#toastText").textContent = msg || "Saved";
-  t.classList.add("show");
-  setTimeout(() => t.classList.remove("show"), ms);
-}
+    *{ box-sizing:border-box; }
+    html,body{
+      margin:0; padding:0;
+      background:var(--bg);
+      color:var(--ink);
+      font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      -webkit-text-size-adjust:100%;
+      text-size-adjust:100%;
+    }
 
-function escapeHtml(s) {
-  return String(s || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+    header{
+      position:sticky; top:0; z-index:10;
+      background:var(--brand);
+      color:var(--brand-ink);
+      padding:14px 16px;
+      border-bottom:1px solid rgba(255,255,255,.15);
+    }
+    .wrap{ max-width:1200px; margin:0 auto; padding:0 14px 60px; }
+    .headRow{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:12px; flex-wrap:wrap;
+    }
+    .title{
+      display:flex; align-items:center; gap:10px;
+    }
+    .badgeBrand{
+      width:34px; height:34px;
+      border-radius:10px;
+      background:rgba(255,255,255,.18);
+      border:1px solid rgba(255,255,255,.28);
+    }
+    h1{
+      margin:0;
+      font-size:18px;
+      letter-spacing:.2px;
+    }
+    .subhead{
+      margin:0;
+      opacity:.9;
+      font-size:12px;
+    }
 
-function loadPrefs() {
-  const name = localStorage.getItem("dfd_admin_name") || "";
-  $("#adminName").value = name;
-}
-function savePrefs() {
-  localStorage.setItem("dfd_admin_name", ($("#adminName").value || "").trim());
-}
-function adminName() {
-  const n = ($("#adminName").value || "").trim();
-  if (!n) throw new Error("Enter Admin Name (for logging)");
-  return n;
-}
+    .toolbar{
+      display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    }
+    .toolbar label{ font-size:12px; opacity:.95; font-weight:700; }
+    .toolbar input{
+      height:36px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,.25);
+      background:rgba(255,255,255,.14);
+      color:#fff;
+      padding:0 10px;
+      outline:none;
+      min-width:220px;
+    }
+    .toolbar input::placeholder{ color:rgba(255,255,255,.8); }
+    .btn{
+      height:36px;
+      padding:0 12px;
+      border-radius:10px;
+      border:1px solid rgba(0,0,0,.12);
+      background:#fff;
+      color:#111;
+      font-weight:800;
+      cursor:pointer;
+    }
+    .btn:active{ transform: translateY(1px); }
 
-async function apiGet(params) {
-  const qs = new URLSearchParams(params);
-  const res = await fetch(`/api?${qs.toString()}`, { method: "GET" });
-  const text = await res.text();
-  let json;
-  try { json = JSON.parse(text); }
-  catch { throw new Error(`Bad JSON from /api: ${text.slice(0, 160)}`); }
-  if (!json.ok) throw new Error(json.error || "Request failed");
-  return json;
-}
+    main{ padding-top:14px; }
 
-async function apiPost(body) {
-  const res = await fetch(`/api`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Accept": "application/json" },
-    body: JSON.stringify(body)
-  });
-  const text = await res.text();
-  let json;
-  try { json = JSON.parse(text); }
-  catch { throw new Error(`Bad JSON from /api: ${text.slice(0, 160)}`); }
-  if (!json.ok) throw new Error(json.error || "Request failed");
-  return json;
-}
+    .grid2{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:12px;
+      align-items:start;
+    }
+    @media (max-width: 980px){
+      .grid2{ grid-template-columns: 1fr; }
+      .toolbar input{ min-width: 180px; }
+    }
 
-/* ---------- Apparatus requirement rules (ADMIN UI only) ---------- */
-function requirementsFor(apparatusIdRaw) {
-  const id = String(apparatusIdRaw || "").toUpperCase().trim();
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:12px;
+      box-shadow: 0 8px 18px rgba(0,0,0,.04);
+    }
+    .card h2{
+      margin:0 0 8px;
+      font-size:16px;
+      letter-spacing:.2px;
+    }
+    .note{
+      color:var(--muted);
+      font-size:12px;
+    }
 
-  const req = {
-    apparatusDaily: true,
-    medicalDaily: true,
-    scbaWeekly: true,
-    pumpWeekly: true,
-    aerialWeekly: true,
-    sawWeekly: true,
-    batteriesWeekly: true
-  };
+    /* Status table */
+    table.grid{
+      width:100%;
+      border-collapse:collapse;
+      overflow:hidden;
+      border-radius:12px;
+      border:1px solid var(--line);
+    }
+    .grid thead th{
+      background:#f3f4f6;
+      text-align:left;
+      padding:10px;
+      font-size:12px;
+      border-bottom:1px solid var(--line);
+    }
+    .grid tbody td{
+      padding:10px;
+      vertical-align:top;
+      border-bottom:1px solid var(--line);
+    }
+    .grid tbody tr:last-child td{ border-bottom:none; }
+    .pill{
+      display:inline-block;
+      padding:4px 8px;
+      border-radius:999px;
+      font-weight:900;
+      font-size:11px;
+      border:1px solid rgba(0,0,0,.08);
+    }
+    .pill.ok{ background:rgba(26,127,55,.12); color:var(--ok); }
+    .pill.bad{ background:rgba(200,30,30,.12); color:var(--bad); }
+    .pill.na{ background:rgba(107,114,128,.12); color:var(--na); }
+    .sub{
+      display:block;
+      margin-top:3px;
+      color:var(--muted);
+      font-size:11px;
+    }
 
-  if (id === "E-1") {
-    req.sawWeekly = false;
-    req.aerialWeekly = false;
-  }
+    /* Weekly config rows reuse .issue layout */
+    .issue{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:10px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:#fff;
+      margin-top:10px;
+    }
+    .issue h3{
+      margin:0;
+      font-size:13px;
+      letter-spacing:.2px;
+    }
+    .meta{
+      color:var(--muted);
+      font-size:12px;
+      margin-top:4px;
+    }
+    .right{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    select{
+      height:34px;
+      border-radius:10px;
+      border:1px solid var(--line);
+      padding:0 10px;
+      background:#fff;
+      font-weight:700;
+    }
 
-  if (id === "R-1") {
-    req.pumpWeekly = false;
-    req.aerialWeekly = false;
-    req.medicalDaily = false;
-  }
+    /* Issues highlighting */
+    .hl-new{ background: var(--hl-new); }
+    .hl-old{ background: var(--hl-old); }
+    .hl-ack{ background: var(--hl-ack); }
 
-  if (/^T-\d+$/i.test(id)) req.pumpWeekly = true;
+    .toggle{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      font-weight:800;
+      font-size:12px;
+      user-select:none;
+    }
+    .toggle input{ width:18px; height:18px; }
 
-  return req;
-}
+    /* Unit grouped issues */
+    details.unit-group{
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:#fff;
+      overflow:hidden;
+      margin-top:10px;
+    }
+    summary.unit-summary{
+      list-style:none;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:12px;
+      background:#f8fafc;
+      border-bottom:1px solid var(--line);
+    }
+    summary.unit-summary::-webkit-details-marker{ display:none; }
+    .unit-left{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      min-width:0;
+    }
+    .unit-title{
+      font-weight:900;
+      font-size:14px;
+      letter-spacing:.2px;
+    }
+    .unit-meta{
+      display:flex;
+      align-items:center;
+      gap:6px;
+      flex-wrap:wrap;
+    }
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:3px 8px;
+      border-radius:999px;
+      font-weight:900;
+      font-size:11px;
+      border:1px solid rgba(0,0,0,.10);
+      background:#fff;
+    }
+    .badge.b-new{ color: var(--b-new); }
+    .badge.b-old{ color: var(--b-old); }
+    .badge.b-ack{ color: var(--b-ack); }
+    .unit-count{
+      font-weight:900;
+      font-size:12px;
+      padding:4px 10px;
+      border-radius:999px;
+      border:1px solid rgba(0,0,0,.10);
+      background:#fff;
+    }
+    .unit-body{ padding:10px; display:grid; gap:10px; }
 
-/* ---------- UI builders ---------- */
-function pill(okOrNull, lastIso) {
-  if (okOrNull === null) {
-    return `<span class="pill na">N/A</span><span class="sub">—</span>`;
-  }
-  const last = lastIso ? new Date(lastIso) : null;
-  const lastStr = last ? last.toLocaleString() : "—";
-  const cls = okOrNull ? "ok" : "bad";
-  const label = okOrNull ? "DONE" : "NOT DONE";
-  return `<span class="pill ${cls}">${label}</span><span class="sub">Last: ${escapeHtml(lastStr)}</span>`;
-}
+    /* Email section */
+    .emailBox{
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:12px;
+      background:#fff;
+      margin-top:10px;
+    }
+    .emailRow{
+      display:flex;
+      align-items:flex-end;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:10px;
+    }
+    textarea{
+      width:100%;
+      min-height:90px;
+      border-radius:12px;
+      border:1px solid var(--line);
+      padding:10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size:12px;
+      line-height:1.35;
+      resize:vertical;
+    }
+    label{ font-weight:900; font-size:12px; }
 
-function renderStatus(status) {
-  const tb = $("#statusTable tbody");
-  tb.innerHTML = "";
+    /* Toast */
+    #toast{
+      position:fixed;
+      left:50%;
+      bottom:16px;
+      transform:translateX(-50%);
+      background:#111;
+      color:#fff;
+      border-radius:999px;
+      padding:10px 14px;
+      font-weight:900;
+      font-size:13px;
+      box-shadow: 0 10px 25px rgba(0,0,0,.25);
+      opacity:0;
+      pointer-events:none;
+      transition: opacity .18s ease;
+      z-index:9999;
+    }
+    #toast.show{ opacity:1; }
 
-  const rows = status.rows || [];
-  for (const r of rows) {
-    const c = r.checks || {};
-    const req = requirementsFor(r.apparatusId);
-
-    const cell = (required, obj) => {
-      if (!required) return pill(null);
-      return pill(!!obj?.ok, obj?.last);
-    };
-
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td data-label="Station">${escapeHtml(r.stationName || r.stationId)}</td>
-      <td data-label="Apparatus">${escapeHtml(r.apparatusId)}</td>
-      <td data-label="Apparatus Daily">${cell(req.apparatusDaily, c.apparatusDaily)}</td>
-      <td data-label="Medical Daily">${cell(req.medicalDaily, c.medicalDaily)}</td>
-      <td data-label="SCBA Weekly">${cell(req.scbaWeekly, c.scbaWeekly)}</td>
-      <td data-label="Pump Weekly">${cell(req.pumpWeekly, c.pumpWeekly)}</td>
-      <td data-label="Aerial Weekly">${cell(req.aerialWeekly, c.aerialWeekly)}</td>
-      <td data-label="Saws Weekly">${cell(req.sawWeekly, c.sawWeekly)}</td>
-      <td data-label="Batteries Weekly">${cell(req.batteriesWeekly, c.batteriesWeekly)}</td>
-    `;
-    tb.appendChild(tr);
-  }
-}
-
-const WEEKDAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-
-function renderWeeklyConfig(cfg) {
-  const box = $("#weeklyConfigBox");
-  box.innerHTML = "";
-
-  const items = [
-    { key: "scbaWeekly", label: "SCBA Weekly" },
-    { key: "pumpWeekly", label: "Pump Weekly" },
-    { key: "aerialWeekly", label: "Aerial Weekly" },
-    { key: "sawWeekly", label: "Saws Weekly" },
-    { key: "batteriesWeekly", label: "Batteries Weekly" }
-  ];
-
-  for (const it of items) {
-    const current = cfg[it.key] || "Saturday";
-
-    const row = document.createElement("div");
-    row.className = "issue";
-    row.innerHTML = `
-      <div>
-        <h3>${escapeHtml(it.label)}</h3>
-        <div class="meta">Current: <b>${escapeHtml(current)}</b></div>
-      </div>
-      <div class="right">
-        <select data-key="${escapeHtml(it.key)}">
-          ${WEEKDAYS.map(d => `<option ${d === current ? "selected" : ""}>${escapeHtml(d)}</option>`).join("")}
-        </select>
-        <button class="btn" data-save="${escapeHtml(it.key)}">Save</button>
-      </div>
-    `;
-
-    row.querySelector(`button[data-save="${CSS.escape(it.key)}"]`).addEventListener("click", async () => {
-      try{
-        savePrefs();
-        const weekday = row.querySelector(`select[data-key="${CSS.escape(it.key)}"]`).value;
-        const user = adminName();
-        await apiPost({ action: "setWeeklyDay", checkKey: it.key, weekday, user });
-        toast(`${it.label} set to ${weekday}`);
-        await refreshStatusAndConfig();
-      }catch(err){
-        toast(err.message, 3200);
+    /* Responsive table stack */
+    @media (max-width: 760px){
+      table.grid thead{ display:none; }
+      table.grid, table.grid tbody, table.grid tr, table.grid td{
+        display:block;
+        width:100%;
       }
-    });
+      table.grid tr{
+        border-bottom:1px solid var(--line);
+        padding:10px 0;
+      }
+      table.grid td{
+        border:none;
+        padding:6px 10px;
+      }
+      table.grid td::before{
+        content: attr(data-label);
+        display:block;
+        font-size:11px;
+        color: var(--muted);
+        font-weight:900;
+        margin-bottom:2px;
+      }
+    }
+  </style>
+</head>
 
-    box.appendChild(row);
-  }
-}
+<body>
+  <header>
+    <div class="wrap">
+      <div class="headRow">
+        <div class="title">
+          <div class="badgeBrand"></div>
+          <div>
+            <h1>DFD — Administration</h1>
+            <p class="subhead">Status dashboard • Weekly config • Issues • Station-scoped email groups</p>
+          </div>
+        </div>
 
-/* ---------- Issues highlighting + grouping ---------- */
-function computedIssueStatus_(iss) {
-  const raw = String(iss.status || "").toUpperCase();
-  if (raw === "RESOLVED") return "RESOLVED";
-  if (raw === "OLD") return "OLD";
-  if (raw === "NEW") return "NEW";
-
-  const created = iss.createdAt ? new Date(iss.createdAt).getTime() : null;
-  if (!created) return "NEW";
-  const ageHours = (Date.now() - created) / (1000 * 60 * 60);
-  return ageHours >= 96 ? "OLD" : "NEW";
-}
-
-function groupByApparatus_(issues) {
-  const map = new Map();
-  for (const iss of (issues || [])) {
-    const ap = String(iss.apparatusId || "Unknown").trim() || "Unknown";
-    if (!map.has(ap)) map.set(ap, []);
-    map.get(ap).push(iss);
-  }
-  const keys = Array.from(map.keys()).sort((a,b) => a.localeCompare(b, undefined, { numeric:true, sensitivity:"base" }));
-  return keys.map(k => [k, map.get(k)]);
-}
-
-function summarizeUnitIssues_(unitIssues) {
-  let newCt = 0, oldCt = 0, ackCt = 0;
-  for (const iss of unitIssues) {
-    const computed = computedIssueStatus_(iss);
-    if (iss.acknowledged) ackCt++;
-    else if (computed === "OLD") oldCt++;
-    else newCt++;
-  }
-  return { newCt, oldCt, ackCt, total: unitIssues.length };
-}
-
-function renderIssueRow_(iss) {
-  const wrap = document.createElement("div");
-  wrap.className = "issue";
-
-  const updated = iss.lastUpdatedAt ? new Date(iss.lastUpdatedAt).toLocaleString() : "—";
-  const computedStatus = computedIssueStatus_(iss);
-  const acknowledged = !!iss.acknowledged;
-
-  wrap.classList.remove("hl-new","hl-old","hl-ack");
-  if (acknowledged) wrap.classList.add("hl-ack");
-  else if (computedStatus === "OLD") wrap.classList.add("hl-old");
-  else wrap.classList.add("hl-new");
-
-  wrap.innerHTML = `
-    <div style="min-width:0">
-      <h3>${escapeHtml(iss.apparatusId)} — ${escapeHtml(iss.issueText || "")}</h3>
-      <div class="meta">
-        Status: <b>${escapeHtml(computedStatus)}</b>
-        ${acknowledged ? `• <b>ACK</b>` : ``}
-        • Updated: ${escapeHtml(updated)}
+        <div class="toolbar">
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label for="adminName">Admin Name (for logging)</label>
+            <input id="adminName" placeholder="Your name (required)" />
+          </div>
+          <button class="btn" id="btnRefresh">Refresh</button>
+        </div>
       </div>
-      ${iss.bulletNote ? `<div class="meta">Note: ${escapeHtml(iss.bulletNote)}</div>` : ``}
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="grid2">
+      <!-- Status -->
+      <section class="card">
+        <h2>Apparatus Check Status</h2>
+        <div class="note">Green = done in current window • Red = not done • N/A follows apparatus requirement rules</div>
+        <div style="margin-top:10px; overflow:auto">
+          <table class="grid" id="statusTable">
+            <thead>
+              <tr>
+                <th>Station</th>
+                <th>Apparatus</th>
+                <th>Apparatus Daily</th>
+                <th>Medical Daily</th>
+                <th>SCBA Weekly</th>
+                <th>Pump Weekly</th>
+                <th>Aerial Weekly</th>
+                <th>Saws Weekly</th>
+                <th>Batteries Weekly</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="9" class="note">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Weekly config -->
+      <section class="card">
+        <h2>Weekly Schedule Configuration</h2>
+        <div class="note">Change which weekday counts for each weekly check. This applies department-wide.</div>
+        <div id="weeklyConfigBox"></div>
+      </section>
     </div>
 
-    <div class="right">
-      <label class="toggle" title="Checked = Administration has seen it and is working it (green highlight)">
-        <input type="checkbox" data-ack="${escapeHtml(iss.issueId)}" ${acknowledged ? "checked" : ""}>
-        Acknowledged
-      </label>
+    <!-- Issues -->
+    <section class="card" style="margin-top:12px">
+      <h2>Active Issues (Station 1)</h2>
+      <div class="note">NEW = red • OLD (auto after 96 hours) = yellow • ACK = green highlight. Resolve removes from active views.</div>
+      <div id="issuesBox" style="margin-top:10px"></div>
+    </section>
 
-      <select data-issue="${escapeHtml(iss.issueId)}">
-        <option value="NEW" ${computedStatus === "NEW" ? "selected" : ""}>New</option>
-        <option value="OLD" ${computedStatus === "OLD" ? "selected" : ""}>Old</option>
-        <option value="RESOLVED">Resolved</option>
-      </select>
-
-      <button class="btn" data-apply="${escapeHtml(iss.issueId)}">Apply</button>
-    </div>
-  `;
-
-  wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`)?.addEventListener("change", async (e) => {
-    try{
-      savePrefs();
-      const user = adminName();
-      const ack = !!e.target.checked;
-
-      await apiPost({
-        action: "updateIssue",
-        issueId: iss.issueId,
-        changes: { acknowledged: ack },
-        user
-      });
-
-      toast(ack ? "Acknowledged" : "Un-acknowledged");
-      await refreshIssues();
-    }catch(err){
-      toast(err.message, 3200);
-    }
-  });
-
-  wrap.querySelector(`button[data-apply="${CSS.escape(iss.issueId)}"]`)?.addEventListener("click", async () => {
-    try{
-      savePrefs();
-      const user = adminName();
-      const status = wrap.querySelector(`select[data-issue="${CSS.escape(iss.issueId)}"]`).value;
-      const ack = !!wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`).checked;
-
-      await apiPost({
-        action: "updateIssue",
-        issueId: iss.issueId,
-        changes: { status, acknowledged: ack },
-        user
-      });
-
-      toast(status === "RESOLVED" ? "Issue resolved" : "Issue updated");
-      await refreshIssues();
-    }catch(err){
-      toast(err.message, 3200);
-    }
-  });
-
-  return wrap;
-}
-
-function renderIssues(issues) {
-  const box = $("#issuesBox");
-  box.innerHTML = "";
-
-  const active = (issues || []).filter(x => String(x.status || "").toUpperCase() !== "RESOLVED");
-  if (!active.length) {
-    box.innerHTML = `<div class="note">No active issues.</div>`;
-    return;
-  }
-
-  const grouped = groupByApparatus_(active);
-
-  for (const [apparatusId, unitIssuesRaw] of grouped) {
-    const unitIssues = [...unitIssuesRaw].sort((a,b) => {
-      const aAck = !!a.acknowledged, bAck = !!b.acknowledged;
-      if (aAck !== bAck) return aAck ? 1 : -1;
-
-      const aSt = computedIssueStatus_(a);
-      const bSt = computedIssueStatus_(b);
-      const rank = (st) => (st === "OLD" ? 0 : 1);
-      if (rank(aSt) !== rank(bSt)) return rank(aSt) - rank(bSt);
-
-      const aT = new Date(a.lastUpdatedAt || a.createdAt || 0).getTime();
-      const bT = new Date(b.lastUpdatedAt || b.createdAt || 0).getTime();
-      return bT - aT;
-    });
-
-    const sum = summarizeUnitIssues_(unitIssues);
-
-    const details = document.createElement("details");
-    details.className = "unit-group";
-    details.open = (sum.newCt + sum.oldCt) > 0;
-
-    details.innerHTML = `
-      <summary class="unit-summary">
-        <div class="unit-left">
-          <span class="unit-title">${escapeHtml(apparatusId)}</span>
-          <span class="unit-meta">
-            ${sum.newCt ? `<span class="badge b-new">${sum.newCt} new</span>` : ``}
-            ${sum.oldCt ? `<span class="badge b-old">${sum.oldCt} old</span>` : ``}
-            ${sum.ackCt ? `<span class="badge b-ack">${sum.ackCt} ack</span>` : ``}
-          </span>
-        </div>
-        <div class="unit-count">${sum.total}</div>
-      </summary>
-      <div class="unit-body"></div>
-    `;
-
-    const body = details.querySelector(".unit-body");
-    for (const iss of unitIssues) body.appendChild(renderIssueRow_(iss));
-
-    box.appendChild(details);
-  }
-}
-
-/* ---------- Email config UI (per-station) ---------- */
-function parseEmails_(text) {
-  return String(text || "")
-    .split(/\r?\n/)
-    .map(x => x.trim())
-    .filter(Boolean);
-}
-
-let STATION_LIST = [];
-
-function renderEmailEditors(emailCfg) {
-  const host = $("#emailStationsBox");
-  host.innerHTML = "";
-
-  const issuesBy = emailCfg?.issuesByStation || {};
-  const drugsAllBy = emailCfg?.drugsAllByStation || {};
-  const drugsPrimaryBy = emailCfg?.drugsPrimaryByStation || {};
-
-  for (const st of STATION_LIST) {
-    const sid = String(st.stationId);
-    const card = document.createElement("div");
-    card.className = "emailBox";
-    card.innerHTML = `
-      <h2 style="margin:0">${escapeHtml(st.stationName)} (ID ${escapeHtml(sid)})</h2>
-      <div class="note">One email per line.</div>
-
-      <div class="emailRow">
-        <div style="flex:1 1 420px">
-          <label>Issues Emails (this station only)</label><br/>
-          <textarea data-kind="issuesByStation" data-station="${escapeHtml(sid)}" placeholder="one@email.com&#10;two@email.com"></textarea>
-        </div>
-        <button class="btn" data-save="issuesByStation" data-station="${escapeHtml(sid)}">Save</button>
+    <!-- Email Recipients -->
+    <section class="card" style="margin-top:12px">
+      <h2>Email Recipients (By Station)</h2>
+      <div class="note">
+        Station-scoped lists:
+        <b>Issues</b> emails only include issues for units assigned to that station.
+        <b>Drugs</b> uses All (≤45 days digest) and Primary (≤30 + ≤14 escalation).
       </div>
+      <div id="emailStationsBox" style="display:grid; gap:12px; margin-top:10px"></div>
+    </section>
+  </main>
 
-      <div class="emailRow">
-        <div style="flex:1 1 420px">
-          <label>Drug Emails — ALL (≤45 day digest)</label><br/>
-          <textarea data-kind="drugsAllByStation" data-station="${escapeHtml(sid)}"></textarea>
-        </div>
-        <button class="btn" data-save="drugsAllByStation" data-station="${escapeHtml(sid)}">Save</button>
-      </div>
+  <!-- Toast -->
+  <div id="toast" aria-live="polite" aria-atomic="true">
+    <span id="toastText">Saved</span>
+  </div>
 
-      <div class="emailRow">
-        <div style="flex:1 1 420px">
-          <label>Drug Emails — PRIMARY (≤30 and ≤14 escalation)</label><br/>
-          <textarea data-kind="drugsPrimaryByStation" data-station="${escapeHtml(sid)}"></textarea>
-        </div>
-        <button class="btn" data-save="drugsPrimaryByStation" data-station="${escapeHtml(sid)}">Save</button>
-      </div>
-    `;
-
-    const tIssues = card.querySelector(`textarea[data-kind="issuesByStation"][data-station="${CSS.escape(sid)}"]`);
-    const tAll = card.querySelector(`textarea[data-kind="drugsAllByStation"][data-station="${CSS.escape(sid)}"]`);
-    const tPrimary = card.querySelector(`textarea[data-kind="drugsPrimaryByStation"][data-station="${CSS.escape(sid)}"]`);
-
-    tIssues.value = (issuesBy[sid] || []).join("\n");
-    tAll.value = (drugsAllBy[sid] || []).join("\n");
-    tPrimary.value = (drugsPrimaryBy[sid] || []).join("\n");
-
-    card.querySelectorAll("button[data-save]").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        try {
-          savePrefs();
-          const user = adminName();
-          const kind = btn.getAttribute("data-save");
-          const stationId = btn.getAttribute("data-station");
-
-          const ta = card.querySelector(`textarea[data-kind="${CSS.escape(kind)}"][data-station="${CSS.escape(stationId)}"]`);
-          const emails = parseEmails_(ta.value);
-
-          await apiPost({ action:"setEmailConfig", kind, stationId, emails, user });
-          toast(`Saved ${kind} for Station ${stationId}`);
-        } catch (err) {
-          toast(err.message, 3200);
-        }
-      });
-    });
-
-    host.appendChild(card);
-  }
-}
-
-async function loadStations() {
-  const cfg = await apiGet({ action: "getConfig" });
-  STATION_LIST = cfg?.config?.stations || [];
-}
-
-/* ---------- Refresh ---------- */
-async function refreshStatusAndConfig() {
-  const s = await apiGet({ action: "getAdminStatus" });
-  renderStatus(s.status);
-
-  const cfg = s.status.weeklyConfig || (await apiGet({ action: "getWeeklyConfig" })).weeklyConfig;
-  renderWeeklyConfig(cfg);
-}
-
-async function refreshIssues() {
-  const res = await apiGet({ action: "listIssues", stationId: "1", includeCleared: "false" });
-  renderIssues(res.issues || []);
-}
-
-async function refreshEmailConfig() {
-  const cfg = await apiGet({ action: "getEmailConfig" });
-  renderEmailEditors(cfg.emails || {});
-}
-
-async function refreshAll() {
-  await refreshStatusAndConfig();
-  await refreshIssues();
-  await refreshEmailConfig();
-}
-
-/* ---------- Boot ---------- */
-async function boot() {
-  loadPrefs();
-
-  $("#btnRefresh").addEventListener("click", async () => {
-    try {
-      savePrefs();
-      await refreshAll();
-      toast("Refreshed");
-    } catch (err) {
-      toast(err.message, 3200);
-    }
-  });
-
-  try {
-    await loadStations();
-    await refreshAll();
-    toast("Loaded");
-  } catch (err) {
-    toast(err.message, 3200);
-  }
-}
-
-document.addEventListener("DOMContentLoaded", boot);
+  <!-- Script -->
+  <script src="/administration.js"></script>
+</body>
+</html>
