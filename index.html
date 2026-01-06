@@ -16,9 +16,10 @@
       --bg:#f6f7f8; --card:#fff; --ink:#111; --muted:#666;
       --radius:14px;
 
-      --ok:#1f9d55;
-      --warn:#b07d00;
-      --bad:#c81e1e;
+      --drugGreen: rgba(31,157,85,.14);
+      --drugYellow: rgba(179,123,0,.14);
+      --drugRed: rgba(200,30,30,.14);
+      --drugBorder: rgba(0,0,0,.06);
     }
     *{box-sizing:border-box}
     body{margin:0; font:15px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial; background:var(--bg); color:var(--ink)}
@@ -50,19 +51,15 @@
       background:#eef1f5; color:#333; font-size:12px; font-weight:700;
     }
 
-    /* ===== Drug expiration highlighting (NO layout changes) ===== */
-    /* Row-level highlight (most reliable, doesn't need specific TD structure) */
-    tr.exp-green td { background: rgba(31,157,85,.10) !important; }
-    tr.exp-yellow td{ background: rgba(176,125,0,.12) !important; }
-    tr.exp-red td   { background: rgba(200,30,30,.12) !important; }
-
-    /* Legend pills */
-    .legend{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
-    .legend .k{display:inline-flex;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
-    .dot{width:10px;height:10px;border-radius:999px;display:inline-block}
-    .dot.g{background:rgba(31,157,85,.9)}
-    .dot.y{background:rgba(176,125,0,.9)}
-    .dot.r{background:rgba(200,30,30,.9)}
+    /* Drug color highlights */
+    .drugRow{
+      border:1px solid var(--drugBorder);
+      border-radius:12px;
+      padding:10px;
+    }
+    .drugGreen{ background: var(--drugGreen); }
+    .drugYellow{ background: var(--drugYellow); }
+    .drugRed{ background: var(--drugRed); }
   </style>
 </head>
 
@@ -133,19 +130,10 @@
 
     <div class="card">
       <label>Check Form</label>
-
-      <!-- Added legend only (doesn't change dropdown flow/layout) -->
-      <div class="legend" id="drugLegend" style="display:none">
-        <span class="k"><span class="dot g"></span> Exp > 30 days (Green)</span>
-        <span class="k"><span class="dot y"></span> Exp 15–30 days (Yellow)</span>
-        <span class="k"><span class="dot r"></span> Exp ≤ 14 days / expired (Red)</span>
-      </div>
-
       <div id="formArea" class="muted">Select a check type to begin.</div>
     </div>
   </main>
 
-  <!-- Service worker registration (auto updates without hard refresh) -->
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/service-worker.js").then((reg) => {
@@ -163,82 +151,5 @@
   </script>
 
   <script src="/app.js"></script>
-
-  <!-- Expiration highlighting hook (safe, does nothing unless it finds your med table) -->
-  <script>
-    (function(){
-      const MS_PER_DAY = 24*60*60*1000;
-
-      function todayMidnight(){
-        const d = new Date();
-        d.setHours(0,0,0,0);
-        return d;
-      }
-
-      function daysUntil(expStr){
-        if (!expStr) return null;
-        const exp = new Date(expStr + "T00:00:00");
-        const diff = exp.getTime() - todayMidnight().getTime();
-        return Math.floor(diff / MS_PER_DAY);
-      }
-
-      // Green: >30, Yellow: 15-30, Red: <=14
-      function expBucket(expStr){
-        const d = daysUntil(expStr);
-        if (d === null) return null;
-        if (d <= 14) return "red";
-        if (d <= 30) return "yellow";
-        return "green";
-      }
-
-      function applyDrugHighlight(tr){
-        const expInput = tr.querySelector('.md-exp');
-        if (!expInput) return;
-
-        const bucket = expBucket(expInput.value || "");
-        tr.classList.remove('exp-green','exp-yellow','exp-red');
-
-        if (bucket === "green") tr.classList.add('exp-green');
-        if (bucket === "yellow") tr.classList.add('exp-yellow');
-        if (bucket === "red") tr.classList.add('exp-red');
-      }
-
-      function hookMedTable(){
-        const tbl = document.querySelector('#md_drugs');
-        const legend = document.querySelector('#drugLegend');
-
-        if (!tbl) return false;
-
-        // show legend once med table exists
-        if (legend) legend.style.display = '';
-
-        const tbody = tbl.querySelector('tbody');
-        if (!tbody) return true;
-
-        // initial pass + listeners
-        Array.from(tbody.querySelectorAll('tr')).forEach(tr => {
-          const expInput = tr.querySelector('.md-exp');
-          if (expInput && !expInput.__dfd_bound){
-            expInput.__dfd_bound = true;
-            expInput.addEventListener('change', () => applyDrugHighlight(tr));
-            expInput.addEventListener('input',  () => applyDrugHighlight(tr));
-          }
-          applyDrugHighlight(tr);
-        });
-
-        return true;
-      }
-
-      // Observe for med form being rendered dynamically into #formArea
-      const obs = new MutationObserver(() => {
-        hookMedTable();
-      });
-
-      obs.observe(document.body, { childList:true, subtree:true });
-
-      // best-effort initial run
-      hookMedTable();
-    })();
-  </script>
 </body>
 </html>
