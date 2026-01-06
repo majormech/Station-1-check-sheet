@@ -1,13 +1,15 @@
-/* DFD Administration UI (Cloudflare Pages)
-   IMPORTANT: This UI talks ONLY to /api (Cloudflare Function proxy).
-   Endpoints used:
-     GET  /api?action=getAdminStatus
-     GET  /api?action=getWeeklyConfig
-     GET  /api?action=listIssues&stationId=1&includeCleared=false
-     POST /api  {action:"setWeeklyDay"...}
-     POST /api  {action:"updateIssue"...}
-     GET  /api?action=getEmailConfig
-     POST /api  {action:"setEmailConfig"...}
+/* administration.js — DFD Administration UI
+   Talks ONLY to /api.
+
+   GET  /api?action=getConfig
+   GET  /api?action=getAdminStatus
+   GET  /api?action=getWeeklyConfig
+   GET  /api?action=listIssues&stationId=1&includeCleared=false
+   GET  /api?action=getEmailConfig
+
+   POST /api {action:"setWeeklyDay"...}
+   POST /api {action:"updateIssue"...}
+   POST /api {action:"setEmailConfig", kind:"issuesByStation|drugsAllByStation|drugsPrimaryByStation", stationId:"1", emails:[...], user:"Name"}
 */
 
 const $ = (s) => document.querySelector(s);
@@ -19,17 +21,24 @@ function toast(msg, ms = 2200) {
   setTimeout(() => t.classList.remove("show"), ms);
 }
 
-function loadPrefs() {
-  const name = localStorage.getItem("dfd_admin_name") || "";
-  const el = $("#adminName");
-  if (el) el.value = name;
-}
-function savePrefs() {
-  localStorage.setItem("dfd_admin_name", ($("#adminName")?.value || "").trim());
+function escapeHtml(s) {
+  return String(s || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
+function loadPrefs() {
+  const name = localStorage.getItem("dfd_admin_name") || "";
+  $("#adminName").value = name;
+}
+function savePrefs() {
+  localStorage.setItem("dfd_admin_name", ($("#adminName").value || "").trim());
+}
 function adminName() {
-  const n = ($("#adminName")?.value || "").trim();
+  const n = ($("#adminName").value || "").trim();
   if (!n) throw new Error("Enter Admin Name (for logging)");
   return n;
 }
@@ -39,11 +48,8 @@ async function apiGet(params) {
   const res = await fetch(`/api?${qs.toString()}`, { method: "GET" });
   const text = await res.text();
   let json;
-  try {
-    json = JSON.parse(text);
-  } catch (e) {
-    throw new Error(`Bad JSON from /api: ${text.slice(0, 160)}`);
-  }
+  try { json = JSON.parse(text); }
+  catch { throw new Error(`Bad JSON from /api: ${text.slice(0, 160)}`); }
   if (!json.ok) throw new Error(json.error || "Request failed");
   return json;
 }
@@ -56,21 +62,13 @@ async function apiPost(body) {
   });
   const text = await res.text();
   let json;
-  try {
-    json = JSON.parse(text);
-  } catch (e) {
-    throw new Error(`Bad JSON from /api: ${text.slice(0, 160)}`);
-  }
+  try { json = JSON.parse(text); }
+  catch { throw new Error(`Bad JSON from /api: ${text.slice(0, 160)}`); }
   if (!json.ok) throw new Error(json.error || "Request failed");
   return json;
 }
 
-/* ---------- Apparatus requirement rules (ADMIN UI only) ----------
-  Your rules:
-  - E-1: NO Saws Weekly, NO Aerial Weekly
-  - R-1: NO Pump Weekly, NO Aerial Weekly, NO Medical Daily
-  - T-1/T-2/T-3: DO have pumps, so YES Pump Weekly
-*/
+/* ---------- Apparatus requirement rules (ADMIN UI only) ---------- */
 function requirementsFor(apparatusIdRaw) {
   const id = String(apparatusIdRaw || "").toUpperCase().trim();
 
@@ -95,9 +93,7 @@ function requirementsFor(apparatusIdRaw) {
     req.medicalDaily = false;
   }
 
-  if (/^T-\d+$/i.test(id)) {
-    req.pumpWeekly = true;
-  }
+  if (/^T-\d+$/i.test(id)) req.pumpWeekly = true;
 
   return req;
 }
@@ -114,7 +110,6 @@ function pill(okOrNull, lastIso) {
   return `<span class="pill ${cls}">${label}</span><span class="sub">Last: ${escapeHtml(lastStr)}</span>`;
 }
 
-/* ✅ FIXED: mobile-friendly table rows with data-labels */
 function renderStatus(status) {
   const tb = $("#statusTable tbody");
   tb.innerHTML = "";
@@ -125,15 +120,14 @@ function renderStatus(status) {
     const req = requirementsFor(r.apparatusId);
 
     const cell = (required, obj) => {
-      if (!required) return pill(null, null);
+      if (!required) return pill(null);
       return pill(!!obj?.ok, obj?.last);
     };
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td data-label="Station">${escapeHtml(r.stationName || r.stationId || "")}</td>
-      <td data-label="Apparatus">${escapeHtml(r.apparatusId || "")}</td>
-
+      <td data-label="Station">${escapeHtml(r.stationName || r.stationId)}</td>
+      <td data-label="Apparatus">${escapeHtml(r.apparatusId)}</td>
       <td data-label="Apparatus Daily">${cell(req.apparatusDaily, c.apparatusDaily)}</td>
       <td data-label="Medical Daily">${cell(req.medicalDaily, c.medicalDaily)}</td>
       <td data-label="SCBA Weekly">${cell(req.scbaWeekly, c.scbaWeekly)}</td>
@@ -178,15 +172,14 @@ function renderWeeklyConfig(cfg) {
       </div>
     `;
 
-    row.querySelector('button[data-save]')?.addEventListener("click", async () => {
+    row.querySelector(`button[data-save="${CSS.escape(it.key)}"]`).addEventListener("click", async () => {
       try{
         savePrefs();
-        const key = it.key;
-        const weekday = row.querySelector(`select[data-key="${CSS.escape(key)}"]`)?.value || current;
+        const weekday = row.querySelector(`select[data-key="${CSS.escape(it.key)}"]`).value;
         const user = adminName();
-        await apiPost({ action: "setWeeklyDay", checkKey: key, weekday, user });
+        await apiPost({ action: "setWeeklyDay", checkKey: it.key, weekday, user });
         toast(`${it.label} set to ${weekday}`);
-        await refreshAll();
+        await refreshStatusAndConfig();
       }catch(err){
         toast(err.message, 3200);
       }
@@ -196,10 +189,7 @@ function renderWeeklyConfig(cfg) {
   }
 }
 
-/* ---------- Issues highlighting + status rules ---------- */
-// NEW: red
-// OLD: yellow (auto after 96 hours if not resolved)
-// ACK checkbox: green highlight (overrides red/yellow)
+/* ---------- Issues highlighting + grouping ---------- */
 function computedIssueStatus_(iss) {
   const raw = String(iss.status || "").toUpperCase();
   if (raw === "RESOLVED") return "RESOLVED";
@@ -212,7 +202,6 @@ function computedIssueStatus_(iss) {
   return ageHours >= 96 ? "OLD" : "NEW";
 }
 
-/* ---------- NEW: group issues by apparatus + collapsible UI ---------- */
 function groupByApparatus_(issues) {
   const map = new Map();
   for (const iss of (issues || [])) {
@@ -275,7 +264,6 @@ function renderIssueRow_(iss) {
     </div>
   `;
 
-  // Acknowledged toggle (immediate save)
   wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`)?.addEventListener("change", async (e) => {
     try{
       savePrefs();
@@ -296,13 +284,12 @@ function renderIssueRow_(iss) {
     }
   });
 
-  // Apply button (status + ack together)
   wrap.querySelector(`button[data-apply="${CSS.escape(iss.issueId)}"]`)?.addEventListener("click", async () => {
     try{
       savePrefs();
       const user = adminName();
-      const status = wrap.querySelector(`select[data-issue="${CSS.escape(iss.issueId)}"]`)?.value || "NEW";
-      const ack = !!wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`)?.checked;
+      const status = wrap.querySelector(`select[data-issue="${CSS.escape(iss.issueId)}"]`).value;
+      const ack = !!wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`).checked;
 
       await apiPost({
         action: "updateIssue",
@@ -334,14 +321,13 @@ function renderIssues(issues) {
   const grouped = groupByApparatus_(active);
 
   for (const [apparatusId, unitIssuesRaw] of grouped) {
-    // sort inside a unit: un-ack first, OLD before NEW, then newest updated first
     const unitIssues = [...unitIssuesRaw].sort((a,b) => {
       const aAck = !!a.acknowledged, bAck = !!b.acknowledged;
       if (aAck !== bAck) return aAck ? 1 : -1;
 
       const aSt = computedIssueStatus_(a);
       const bSt = computedIssueStatus_(b);
-      const rank = (st) => (st === "OLD" ? 0 : 1); // OLD first
+      const rank = (st) => (st === "OLD" ? 0 : 1);
       if (rank(aSt) !== rank(bSt)) return rank(aSt) - rank(bSt);
 
       const aT = new Date(a.lastUpdatedAt || a.createdAt || 0).getTime();
@@ -353,7 +339,6 @@ function renderIssues(issues) {
 
     const details = document.createElement("details");
     details.className = "unit-group";
-    // auto-open units that have any NEW/OLD not acked
     details.open = (sum.newCt + sum.oldCt) > 0;
 
     details.innerHTML = `
@@ -372,24 +357,13 @@ function renderIssues(issues) {
     `;
 
     const body = details.querySelector(".unit-body");
-    for (const iss of unitIssues) {
-      body.appendChild(renderIssueRow_(iss));
-    }
+    for (const iss of unitIssues) body.appendChild(renderIssueRow_(iss));
 
     box.appendChild(details);
   }
 }
 
-function escapeHtml(s) {
-  return String(s || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-/* ---------- Email config UI ---------- */
+/* ---------- Email config UI (per-station) ---------- */
 function parseEmails_(text) {
   return String(text || "")
     .split(/\r?\n/)
@@ -397,25 +371,83 @@ function parseEmails_(text) {
     .filter(Boolean);
 }
 
-async function loadEmailConfig() {
-  const cfg = await apiGet({ action: "getEmailConfig" });
-  const issues = cfg?.emails?.issues || [];
-  const drugs = cfg?.emails?.drugs || [];
-  if ($("#issuesEmails")) $("#issuesEmails").value = issues.join("\n");
-  if ($("#drugEmails")) $("#drugEmails").value = drugs.join("\n");
+let STATION_LIST = [];
+
+function renderEmailEditors(emailCfg) {
+  const host = $("#emailStationsBox");
+  host.innerHTML = "";
+
+  const issuesBy = emailCfg?.issuesByStation || {};
+  const drugsAllBy = emailCfg?.drugsAllByStation || {};
+  const drugsPrimaryBy = emailCfg?.drugsPrimaryByStation || {};
+
+  for (const st of STATION_LIST) {
+    const sid = String(st.stationId);
+    const card = document.createElement("div");
+    card.className = "emailBox";
+    card.innerHTML = `
+      <h2 style="margin:0">${escapeHtml(st.stationName)} (ID ${escapeHtml(sid)})</h2>
+      <div class="note">One email per line.</div>
+
+      <div class="emailRow">
+        <div style="flex:1 1 420px">
+          <label>Issues Emails (this station only)</label><br/>
+          <textarea data-kind="issuesByStation" data-station="${escapeHtml(sid)}" placeholder="one@email.com&#10;two@email.com"></textarea>
+        </div>
+        <button class="btn" data-save="issuesByStation" data-station="${escapeHtml(sid)}">Save</button>
+      </div>
+
+      <div class="emailRow">
+        <div style="flex:1 1 420px">
+          <label>Drug Emails — ALL (≤45 day digest)</label><br/>
+          <textarea data-kind="drugsAllByStation" data-station="${escapeHtml(sid)}"></textarea>
+        </div>
+        <button class="btn" data-save="drugsAllByStation" data-station="${escapeHtml(sid)}">Save</button>
+      </div>
+
+      <div class="emailRow">
+        <div style="flex:1 1 420px">
+          <label>Drug Emails — PRIMARY (≤30 and ≤14 escalation)</label><br/>
+          <textarea data-kind="drugsPrimaryByStation" data-station="${escapeHtml(sid)}"></textarea>
+        </div>
+        <button class="btn" data-save="drugsPrimaryByStation" data-station="${escapeHtml(sid)}">Save</button>
+      </div>
+    `;
+
+    const tIssues = card.querySelector(`textarea[data-kind="issuesByStation"][data-station="${CSS.escape(sid)}"]`);
+    const tAll = card.querySelector(`textarea[data-kind="drugsAllByStation"][data-station="${CSS.escape(sid)}"]`);
+    const tPrimary = card.querySelector(`textarea[data-kind="drugsPrimaryByStation"][data-station="${CSS.escape(sid)}"]`);
+
+    tIssues.value = (issuesBy[sid] || []).join("\n");
+    tAll.value = (drugsAllBy[sid] || []).join("\n");
+    tPrimary.value = (drugsPrimaryBy[sid] || []).join("\n");
+
+    card.querySelectorAll("button[data-save]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        try {
+          savePrefs();
+          const user = adminName();
+          const kind = btn.getAttribute("data-save");
+          const stationId = btn.getAttribute("data-station");
+
+          const ta = card.querySelector(`textarea[data-kind="${CSS.escape(kind)}"][data-station="${CSS.escape(stationId)}"]`);
+          const emails = parseEmails_(ta.value);
+
+          await apiPost({ action:"setEmailConfig", kind, stationId, emails, user });
+          toast(`Saved ${kind} for Station ${stationId}`);
+        } catch (err) {
+          toast(err.message, 3200);
+        }
+      });
+    });
+
+    host.appendChild(card);
+  }
 }
 
-async function saveEmailConfig(kind) {
-  const user = adminName();
-  if (kind === "issues") {
-    const emails = parseEmails_($("#issuesEmails")?.value || "");
-    await apiPost({ action: "setEmailConfig", kind: "issues", emails, user });
-    toast("Issues emails saved");
-  } else if (kind === "drugs") {
-    const emails = parseEmails_($("#drugEmails")?.value || "");
-    await apiPost({ action: "setEmailConfig", kind: "drugs", emails, user });
-    toast("Drug emails saved");
-  }
+async function loadStations() {
+  const cfg = await apiGet({ action: "getConfig" });
+  STATION_LIST = cfg?.config?.stations || [];
 }
 
 /* ---------- Refresh ---------- */
@@ -432,17 +464,22 @@ async function refreshIssues() {
   renderIssues(res.issues || []);
 }
 
+async function refreshEmailConfig() {
+  const cfg = await apiGet({ action: "getEmailConfig" });
+  renderEmailEditors(cfg.emails || {});
+}
+
 async function refreshAll() {
   await refreshStatusAndConfig();
   await refreshIssues();
-  await loadEmailConfig();
+  await refreshEmailConfig();
 }
 
 /* ---------- Boot ---------- */
 async function boot() {
   loadPrefs();
 
-  $("#btnRefresh")?.addEventListener("click", async () => {
+  $("#btnRefresh").addEventListener("click", async () => {
     try {
       savePrefs();
       await refreshAll();
@@ -452,17 +489,8 @@ async function boot() {
     }
   });
 
-  $("#btnSaveIssuesEmails")?.addEventListener("click", async () => {
-    try { savePrefs(); await saveEmailConfig("issues"); }
-    catch (err) { toast(err.message, 3200); }
-  });
-
-  $("#btnSaveDrugEmails")?.addEventListener("click", async () => {
-    try { savePrefs(); await saveEmailConfig("drugs"); }
-    catch (err) { toast(err.message, 3200); }
-  });
-
   try {
+    await loadStations();
     await refreshAll();
     toast("Loaded");
   } catch (err) {
