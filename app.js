@@ -194,9 +194,6 @@ function renderWeeklyConfig(cfg) {
 }
 
 /* ---------- Issues highlighting + status rules ---------- */
-// NEW: red
-// OLD: yellow (auto after 96 hours if not resolved)
-// ACK checkbox: green highlight (overrides red/yellow)
 function computedIssueStatus_(iss) {
   const raw = String(iss.status || "").toUpperCase();
   if (raw === "RESOLVED") return "RESOLVED";
@@ -209,7 +206,7 @@ function computedIssueStatus_(iss) {
   return ageHours >= 96 ? "OLD" : "NEW";
 }
 
-/* ---------- NEW: group issues by apparatus + collapsible UI ---------- */
+/* ---------- Grouping + unit-level indicator ---------- */
 function groupByApparatus_(issues) {
   const map = new Map();
   for (const iss of (issues || [])) {
@@ -217,20 +214,38 @@ function groupByApparatus_(issues) {
     if (!map.has(ap)) map.set(ap, []);
     map.get(ap).push(iss);
   }
-  // sort apparatus keys naturally: E-1, R-1, T-1, T-3...
   const keys = Array.from(map.keys()).sort((a,b) => a.localeCompare(b, undefined, { numeric:true, sensitivity:"base" }));
   return keys.map(k => [k, map.get(k)]);
 }
 
 function summarizeUnitIssues_(unitIssues) {
   let newCt = 0, oldCt = 0, ackCt = 0;
+  let unackedNew = 0, unackedOld = 0;
+
   for (const iss of unitIssues) {
     const computed = computedIssueStatus_(iss);
-    if (iss.acknowledged) ackCt++;
-    else if (computed === "OLD") oldCt++;
-    else newCt++;
+    const ack = !!iss.acknowledged;
+
+    if (ack) {
+      ackCt++;
+    } else {
+      if (computed === "OLD") { oldCt++; unackedOld++; }
+      else { newCt++; unackedNew++; }
+    }
   }
-  return { newCt, oldCt, ackCt, total: unitIssues.length };
+
+  return {
+    newCt, oldCt, ackCt,
+    unackedNew, unackedOld,
+    total: unitIssues.length
+  };
+}
+
+// Unit indicator: NEW (red) > OLD (yellow) > OK (green)
+function unitIndicator_(sum) {
+  if (sum.unackedNew > 0) return { cls: "u-new", label: "NEW" };
+  if (sum.unackedOld > 0) return { cls: "u-old", label: "OLD" };
+  return { cls: "u-ok", label: "OK" };
 }
 
 function renderIssueRow_(iss) {
@@ -273,7 +288,6 @@ function renderIssueRow_(iss) {
     </div>
   `;
 
-  // Acknowledged toggle (immediate save)
   wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`)?.addEventListener("change", async (e) => {
     try{
       savePrefs();
@@ -294,7 +308,6 @@ function renderIssueRow_(iss) {
     }
   });
 
-  // Apply button (status + ack together)
   wrap.querySelector(`button[data-apply="${CSS.escape(iss.issueId)}"]`)?.addEventListener("click", async () => {
     try{
       savePrefs();
@@ -332,7 +345,6 @@ function renderIssues(issues) {
   const grouped = groupByApparatus_(active);
 
   for (const [apparatusId, unitIssuesRaw] of grouped) {
-    // sort inside a unit: un-ack first, OLD before NEW, then newest updated first
     const unitIssues = [...unitIssuesRaw].sort((a,b) => {
       const aAck = !!a.acknowledged, bAck = !!b.acknowledged;
       if (aAck !== bAck) return aAck ? 1 : -1;
@@ -348,16 +360,19 @@ function renderIssues(issues) {
     });
 
     const sum = summarizeUnitIssues_(unitIssues);
+    const ind = unitIndicator_(sum);
 
     const details = document.createElement("details");
     details.className = "unit-group";
-    // auto-open units that have any NEW/OLD not acked
-    details.open = (sum.newCt + sum.oldCt) > 0;
+    details.open = (sum.unackedNew + sum.unackedOld) > 0;
 
     details.innerHTML = `
       <summary class="unit-summary">
         <div class="unit-left">
+          <span class="unit-dot ${ind.cls}" title="Unit issue state"></span>
           <span class="unit-title">${escapeHtml(apparatusId)}</span>
+          <span class="unit-state ${ind.cls}">${ind.label}</span>
+
           <span class="unit-meta">
             ${sum.newCt ? `<span class="badge b-new">${sum.newCt} new</span>` : ``}
             ${sum.oldCt ? `<span class="badge b-old">${sum.oldCt} old</span>` : ``}
@@ -370,9 +385,7 @@ function renderIssues(issues) {
     `;
 
     const body = details.querySelector(".unit-body");
-    for (const iss of unitIssues) {
-      body.appendChild(renderIssueRow_(iss));
-    }
+    for (const iss of unitIssues) body.appendChild(renderIssueRow_(iss));
 
     box.appendChild(details);
   }
