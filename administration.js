@@ -5,7 +5,7 @@
      GET  /api?action=getWeeklyConfig
      GET  /api?action=listIssues&stationId=1&includeCleared=false
      POST /api  {action:"setWeeklyDay"...}
-     POST /api  {action:"updateIssue"...}            <-- NEW (status + acknowledged)
+     POST /api  {action:"updateIssue"...}
      GET  /api?action=getEmailConfig
      POST /api  {action:"setEmailConfig"...}
 */
@@ -198,17 +198,125 @@ function renderWeeklyConfig(cfg) {
 // OLD: yellow (auto after 96 hours if not resolved)
 // ACK checkbox: green highlight (overrides red/yellow)
 function computedIssueStatus_(iss) {
-  // If backend already provides status, use it (NEW/OLD/RESOLVED)
   const raw = String(iss.status || "").toUpperCase();
   if (raw === "RESOLVED") return "RESOLVED";
   if (raw === "OLD") return "OLD";
   if (raw === "NEW") return "NEW";
 
-  // Otherwise compute NEW/OLD from createdAt
   const created = iss.createdAt ? new Date(iss.createdAt).getTime() : null;
   if (!created) return "NEW";
   const ageHours = (Date.now() - created) / (1000 * 60 * 60);
   return ageHours >= 96 ? "OLD" : "NEW";
+}
+
+/* ---------- NEW: group issues by apparatus + collapsible UI ---------- */
+function groupByApparatus_(issues) {
+  const map = new Map();
+  for (const iss of (issues || [])) {
+    const ap = String(iss.apparatusId || "Unknown").trim() || "Unknown";
+    if (!map.has(ap)) map.set(ap, []);
+    map.get(ap).push(iss);
+  }
+  // sort apparatus keys naturally: E-1, R-1, T-1, T-3...
+  const keys = Array.from(map.keys()).sort((a,b) => a.localeCompare(b, undefined, { numeric:true, sensitivity:"base" }));
+  return keys.map(k => [k, map.get(k)]);
+}
+
+function summarizeUnitIssues_(unitIssues) {
+  let newCt = 0, oldCt = 0, ackCt = 0;
+  for (const iss of unitIssues) {
+    const computed = computedIssueStatus_(iss);
+    if (iss.acknowledged) ackCt++;
+    else if (computed === "OLD") oldCt++;
+    else newCt++;
+  }
+  return { newCt, oldCt, ackCt, total: unitIssues.length };
+}
+
+function renderIssueRow_(iss) {
+  const wrap = document.createElement("div");
+  wrap.className = "issue";
+
+  const updated = iss.lastUpdatedAt ? new Date(iss.lastUpdatedAt).toLocaleString() : "—";
+  const computedStatus = computedIssueStatus_(iss);
+  const acknowledged = !!iss.acknowledged;
+
+  wrap.classList.remove("hl-new","hl-old","hl-ack");
+  if (acknowledged) wrap.classList.add("hl-ack");
+  else if (computedStatus === "OLD") wrap.classList.add("hl-old");
+  else wrap.classList.add("hl-new");
+
+  wrap.innerHTML = `
+    <div style="min-width:0">
+      <h3>${escapeHtml(iss.apparatusId)} — ${escapeHtml(iss.issueText || "")}</h3>
+      <div class="meta">
+        Status: <b>${escapeHtml(computedStatus)}</b>
+        ${acknowledged ? `• <b>ACK</b>` : ``}
+        • Updated: ${escapeHtml(updated)}
+      </div>
+      ${iss.bulletNote ? `<div class="meta">Note: ${escapeHtml(iss.bulletNote)}</div>` : ``}
+    </div>
+
+    <div class="right">
+      <label class="toggle" title="Checked = Administration has seen it and is working it (green highlight)">
+        <input type="checkbox" data-ack="${escapeHtml(iss.issueId)}" ${acknowledged ? "checked" : ""}>
+        Acknowledged
+      </label>
+
+      <select data-issue="${escapeHtml(iss.issueId)}">
+        <option value="NEW" ${computedStatus === "NEW" ? "selected" : ""}>New</option>
+        <option value="OLD" ${computedStatus === "OLD" ? "selected" : ""}>Old</option>
+        <option value="RESOLVED">Resolved</option>
+      </select>
+
+      <button class="btn" data-apply="${escapeHtml(iss.issueId)}">Apply</button>
+    </div>
+  `;
+
+  // Acknowledged toggle (immediate save)
+  wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`)?.addEventListener("change", async (e) => {
+    try{
+      savePrefs();
+      const user = adminName();
+      const ack = !!e.target.checked;
+
+      await apiPost({
+        action: "updateIssue",
+        issueId: iss.issueId,
+        changes: { acknowledged: ack },
+        user
+      });
+
+      toast(ack ? "Acknowledged" : "Un-acknowledged");
+      await refreshIssues();
+    }catch(err){
+      toast(err.message, 3200);
+    }
+  });
+
+  // Apply button (status + ack together)
+  wrap.querySelector(`button[data-apply="${CSS.escape(iss.issueId)}"]`)?.addEventListener("click", async () => {
+    try{
+      savePrefs();
+      const user = adminName();
+      const status = wrap.querySelector(`select[data-issue="${CSS.escape(iss.issueId)}"]`).value;
+      const ack = !!wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`).checked;
+
+      await apiPost({
+        action: "updateIssue",
+        issueId: iss.issueId,
+        changes: { status, acknowledged: ack },
+        user
+      });
+
+      toast(status === "RESOLVED" ? "Issue resolved" : "Issue updated");
+      await refreshIssues();
+    }catch(err){
+      toast(err.message, 3200);
+    }
+  });
+
+  return wrap;
 }
 
 function renderIssues(issues) {
@@ -221,91 +329,52 @@ function renderIssues(issues) {
     return;
   }
 
-  for (const iss of active) {
-    const wrap = document.createElement("div");
-    wrap.className = "issue";
+  const grouped = groupByApparatus_(active);
 
-    const updated = iss.lastUpdatedAt ? new Date(iss.lastUpdatedAt).toLocaleString() : "—";
-    const computedStatus = computedIssueStatus_(iss);
-    const acknowledged = !!iss.acknowledged;
+  for (const [apparatusId, unitIssuesRaw] of grouped) {
+    // sort inside a unit: un-ack first, OLD before NEW, then newest updated first
+    const unitIssues = [...unitIssuesRaw].sort((a,b) => {
+      const aAck = !!a.acknowledged, bAck = !!b.acknowledged;
+      if (aAck !== bAck) return aAck ? 1 : -1;
 
-    // Highlight class
-    wrap.classList.remove("hl-new","hl-old","hl-ack");
-    if (acknowledged) wrap.classList.add("hl-ack");
-    else if (computedStatus === "OLD") wrap.classList.add("hl-old");
-    else wrap.classList.add("hl-new");
+      const aSt = computedIssueStatus_(a);
+      const bSt = computedIssueStatus_(b);
+      const rank = (st) => (st === "OLD" ? 0 : 1); // OLD first
+      if (rank(aSt) !== rank(bSt)) return rank(aSt) - rank(bSt);
 
-    wrap.innerHTML = `
-      <div style="min-width:0">
-        <h3>${escapeHtml(iss.apparatusId)} — ${escapeHtml(iss.issueText || "")}</h3>
-        <div class="meta">
-          Status: <b>${escapeHtml(computedStatus)}</b>
-          ${acknowledged ? `• <b>ACK</b>` : ``}
-          • Updated: ${escapeHtml(updated)}
+      const aT = new Date(a.lastUpdatedAt || a.createdAt || 0).getTime();
+      const bT = new Date(b.lastUpdatedAt || b.createdAt || 0).getTime();
+      return bT - aT;
+    });
+
+    const sum = summarizeUnitIssues_(unitIssues);
+
+    const details = document.createElement("details");
+    details.className = "unit-group";
+    // auto-open units that have any NEW/OLD not acked
+    details.open = (sum.newCt + sum.oldCt) > 0;
+
+    details.innerHTML = `
+      <summary class="unit-summary">
+        <div class="unit-left">
+          <span class="unit-title">${escapeHtml(apparatusId)}</span>
+          <span class="unit-meta">
+            ${sum.newCt ? `<span class="badge b-new">${sum.newCt} new</span>` : ``}
+            ${sum.oldCt ? `<span class="badge b-old">${sum.oldCt} old</span>` : ``}
+            ${sum.ackCt ? `<span class="badge b-ack">${sum.ackCt} ack</span>` : ``}
+          </span>
         </div>
-        ${iss.bulletNote ? `<div class="meta">Note: ${escapeHtml(iss.bulletNote)}</div>` : ``}
-      </div>
-
-      <div class="right">
-        <label class="toggle" title="Checked = Administration has seen it and is working it (green highlight)">
-          <input type="checkbox" data-ack="${escapeHtml(iss.issueId)}" ${acknowledged ? "checked" : ""}>
-          Acknowledged
-        </label>
-
-        <select data-issue="${escapeHtml(iss.issueId)}">
-          <option value="NEW" ${computedStatus === "NEW" ? "selected" : ""}>New</option>
-          <option value="OLD" ${computedStatus === "OLD" ? "selected" : ""}>Old</option>
-          <option value="RESOLVED">Resolved</option>
-        </select>
-
-        <button class="btn" data-apply="${escapeHtml(iss.issueId)}">Apply</button>
-      </div>
+        <div class="unit-count">${sum.total}</div>
+      </summary>
+      <div class="unit-body"></div>
     `;
 
-    // Acknowledged toggle (immediate save)
-    wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`)?.addEventListener("change", async (e) => {
-      try{
-        savePrefs();
-        const user = adminName();
-        const ack = !!e.target.checked;
+    const body = details.querySelector(".unit-body");
+    for (const iss of unitIssues) {
+      body.appendChild(renderIssueRow_(iss));
+    }
 
-        await apiPost({
-          action: "updateIssue",
-          issueId: iss.issueId,
-          changes: { acknowledged: ack },
-          user
-        });
-
-        toast(ack ? "Acknowledged" : "Un-acknowledged");
-        await refreshIssues();
-      }catch(err){
-        toast(err.message, 3200);
-      }
-    });
-
-    // Apply button (status + ack together)
-    wrap.querySelector(`button[data-apply="${CSS.escape(iss.issueId)}"]`)?.addEventListener("click", async () => {
-      try{
-        savePrefs();
-        const user = adminName();
-        const status = wrap.querySelector(`select[data-issue="${CSS.escape(iss.issueId)}"]`).value;
-        const ack = !!wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`).checked;
-
-        await apiPost({
-          action: "updateIssue",
-          issueId: iss.issueId,
-          changes: { status, acknowledged: ack },
-          user
-        });
-
-        toast(status === "RESOLVED" ? "Issue resolved" : "Issue updated");
-        await refreshIssues();
-      }catch(err){
-        toast(err.message, 3200);
-      }
-    });
-
-    box.appendChild(wrap);
+    box.appendChild(details);
   }
 }
 
@@ -328,7 +397,6 @@ function parseEmails_(text) {
 
 async function loadEmailConfig() {
   const cfg = await apiGet({ action: "getEmailConfig" });
-  // Expected: { ok:true, emails:{ issues:[...], drugs:[...] } }
   const issues = cfg?.emails?.issues || [];
   const drugs = cfg?.emails?.drugs || [];
   $("#issuesEmails").value = issues.join("\n");
@@ -358,7 +426,6 @@ async function refreshStatusAndConfig() {
 }
 
 async function refreshIssues() {
-  // station 1 for now (same as your current build)
   const res = await apiGet({ action: "listIssues", stationId: "1", includeCleared: "false" });
   renderIssues(res.issues || []);
 }
@@ -393,7 +460,6 @@ async function boot() {
     catch (err) { toast(err.message, 3200); }
   });
 
-  // initial load
   try {
     await refreshAll();
     toast("Loaded");
