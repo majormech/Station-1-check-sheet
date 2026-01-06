@@ -1,26 +1,24 @@
-/* app.js (Crew UI — Decatur Fire Daily / Weekly Checks Alpha)
-   Talks to /api (Cloudflare proxy) which talks to Google Apps Script.
+/* app.js (Crew UI — Decatur Fire — Daily / Weekly Checks Alpha)
+   Talks ONLY to /api (Cloudflare Function proxy) -> Google Apps Script.
 
-   GET  /api?action=getConfig
-   GET  /api?action=getApparatus&stationId=1
-   GET  /api?action=getActiveIssues&stationId=1&apparatusId=E-1
-   GET  /api?action=getDrugMaster&unit=E-1          <-- NEW for last-known exp
+   Required GAS actions:
+     GET  /api?action=getConfig
+     GET  /api?action=getApparatus&stationId=1
+     GET  /api?action=getActiveIssues&stationId=1&apparatusId=E-1
+     POST /api  {action:"saveCheck", ...}
 
-   POST /api { action:"saveCheck", stationId, apparatusId, submitter, checkType, checkPayload, newIssueText, newIssueNote }
+   Optional (for last-known drug expirations):
+     GET  /api?action=getDrugMaster&unit=E-1
 */
 
 const $ = (s) => document.querySelector(s);
 
-function toast(msg, ms = 2200) {
-  const t = $("#toast");
-  const tt = $("#toastText");
-  if (!t || !tt) {
-    console.log("[toast]", msg);
-    return;
-  }
-  tt.textContent = msg || "Saved";
-  t.classList.add("show");
-  setTimeout(() => t.classList.remove("show"), ms);
+function setStatus(msg, isError = false) {
+  const el = $("#status");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.style.color = isError ? "#c81e1e" : "";
+  el.style.fontWeight = isError ? "800" : "700";
 }
 
 function escapeHtml(s) {
@@ -63,265 +61,610 @@ async function apiPost(body) {
   return json;
 }
 
-/* ---------------- prefs ---------------- */
-function loadPrefs() {
-  const submitter = localStorage.getItem("dfd_submitter") || "";
-  const stationId = localStorage.getItem("dfd_station") || "1";
-  const unit = localStorage.getItem("dfd_unit") || "";
+// Soft GET: if action doesn't exist (Unknown action), return null instead of crashing
+async function apiGetSoft(params) {
+  try {
+    return await apiGet(params);
+  } catch (e) {
+    const m = String(e?.message || "").toLowerCase();
+    if (m.includes("unknown action")) return null;
+    throw e;
+  }
+}
 
-  $("#submitterName") && ($("#submitterName").value = submitter);
-  $("#stationSelect") && ($("#stationSelect").value = stationId);
-  $("#unitSelect") && ($("#unitSelect").value = unit);
+/* ---------------- Apparatus requirement rules (Crew UI) ----------------
+  Rules you set:
+  - E-1: NO Saws Weekly, NO Aerial Weekly
+  - R-1: NO Pump Weekly, NO Aerial Weekly, NO Medical Daily
+  - T-1/T-2/T-3: DO have pumps, so YES Pump Weekly
+*/
+function requirementsFor(apparatusIdRaw) {
+  const id = String(apparatusIdRaw || "").toUpperCase().trim();
+
+  const req = {
+    apparatusDaily: true,
+    medicalDaily: true,
+    scbaWeekly: true,
+    pumpWeekly: true,
+    aerialWeekly: true,
+    sawWeekly: true,
+    batteriesWeekly: true,
+    oosUnit: true,
+    oosEquipment: true,
+  };
+
+  if (id === "E-1") {
+    req.sawWeekly = false;
+    req.aerialWeekly = false;
+  }
+
+  if (id === "R-1") {
+    req.pumpWeekly = false;
+    req.aerialWeekly = false;
+    req.medicalDaily = false;
+  }
+
+  if (/^T-\d+$/i.test(id)) {
+    req.pumpWeekly = true;
+  }
+
+  return req;
+}
+
+/* ---------------- State ---------------- */
+let CONFIG = null;
+let APPARATUS = [];
+let DRUG_MASTER = {}; // name -> lastKnownExp
+
+/* ---------------- Prefs ---------------- */
+function loadPrefs() {
+  const who = localStorage.getItem("dfd_who") || "";
+  const station = localStorage.getItem("dfd_station") || "1";
+  const apparatus = localStorage.getItem("dfd_apparatus") || "";
+  const checkType = localStorage.getItem("dfd_checkType") || "";
+
+  if ($("#who")) $("#who").value = who;
+  if ($("#station")) $("#station").value = station;
+  if ($("#apparatus")) $("#apparatus").value = apparatus;
+  if ($("#checkType")) $("#checkType").value = checkType;
 }
 
 function savePrefs() {
-  localStorage.setItem("dfd_submitter", ($("#submitterName")?.value || "").trim());
-  localStorage.setItem("dfd_station", ($("#stationSelect")?.value || "1").trim());
-  localStorage.setItem("dfd_unit", ($("#unitSelect")?.value || "").trim());
+  localStorage.setItem("dfd_who", ($("#who")?.value || "").trim());
+  localStorage.setItem("dfd_station", ($("#station")?.value || "1").trim());
+  localStorage.setItem("dfd_apparatus", ($("#apparatus")?.value || "").trim());
+  localStorage.setItem("dfd_checkType", ($("#checkType")?.value || "").trim());
 }
 
-function requireSubmitter() {
-  const n = ($("#submitterName")?.value || "").trim();
-  if (!n) throw new Error("Enter your name (Submitter)");
+function requireWho() {
+  const n = ($("#who")?.value || "").trim();
+  if (!n) throw new Error("Completed By is required.");
   return n;
 }
 
-function currentStationId() {
-  return ($("#stationSelect")?.value || "1").trim() || "1";
+function stationId() {
+  return ($("#station")?.value || "1").trim() || "1";
 }
 
-function currentUnit() {
-  return ($("#unitSelect")?.value || "").trim();
+function apparatusId() {
+  return ($("#apparatus")?.value || "").trim();
 }
 
-/* ---------------- state ---------------- */
-let CONFIG = null;
-let APPARATUS = [];
-let LAST_KNOWN_EXP = {}; // map drugName -> exp yyyy-mm-dd
+function selectedCheckType() {
+  return ($("#checkType")?.value || "").trim();
+}
 
-/* ---------------- config + apparatus ---------------- */
+/* ---------------- Load config + apparatus ---------------- */
 async function loadConfig() {
   const res = await apiGet({ action: "getConfig" });
   CONFIG = res.config || null;
 
-  const stationSel = $("#stationSelect");
+  const stationSel = $("#station");
   if (stationSel && CONFIG?.stations?.length) {
     stationSel.innerHTML = CONFIG.stations
       .map(s => `<option value="${escapeHtml(s.stationId)}">${escapeHtml(s.stationName)}</option>`)
       .join("");
+
     const saved = localStorage.getItem("dfd_station") || CONFIG.stationIdDefault || "1";
     stationSel.value = saved;
   }
 }
 
-async function loadApparatus(stationId) {
-  const res = await apiGet({ action: "getApparatus", stationId });
+async function loadApparatusForStation(station) {
+  const res = await apiGet({ action: "getApparatus", stationId: station });
   APPARATUS = res.apparatus || [];
 
-  const unitSel = $("#unitSelect");
-  if (!unitSel) return;
+  const apSel = $("#apparatus");
+  if (!apSel) return;
 
-  unitSel.innerHTML = `<option value="">Select Unit…</option>` +
+  apSel.innerHTML =
+    `<option value="">Select apparatus…</option>` +
     APPARATUS.map(a => `<option value="${escapeHtml(a.apparatusId)}">${escapeHtml(a.apparatusName || a.apparatusId)}</option>`).join("");
 
-  const savedUnit = localStorage.getItem("dfd_unit") || "";
-  if (savedUnit) unitSel.value = savedUnit;
+  const savedAp = localStorage.getItem("dfd_apparatus") || "";
+  if (savedAp) apSel.value = savedAp;
 }
 
-/* ---------------- issues ---------------- */
-function renderIssues(issues) {
-  const box = $("#issuesBox");
-  if (!box) return;
+/* ---------------- Check types ---------------- */
+const CHECK_TYPES = [
+  { key: "apparatusDaily", label: "Apparatus Daily" },
+  { key: "medicalDaily",   label: "Medical Daily" },
+  { key: "scbaWeekly",     label: "SCBA Weekly" },
+  { key: "pumpWeekly",     label: "Pump Weekly" },
+  { key: "aerialWeekly",   label: "Aerial Weekly" },
+  { key: "sawWeekly",      label: "Saws Weekly" },
+  { key: "batteriesWeekly",label: "Batteries Weekly" },
+  { key: "oosUnit",        label: "Unit Out of Service" },
+  { key: "oosEquipment",   label: "Equipment Out of Service" },
+];
+
+function renderCheckTypeOptions() {
+  const sel = $("#checkType");
+  if (!sel) return;
+
+  const ap = apparatusId();
+  const req = requirementsFor(ap);
+
+  const allowed = CHECK_TYPES.filter(ct => req[ct.key] !== false);
+
+  sel.innerHTML = `<option value="">Select check type…</option>` +
+    allowed.map(ct => `<option value="${escapeHtml(ct.key)}">${escapeHtml(ct.label)}</option>`).join("");
+
+  const saved = localStorage.getItem("dfd_checkType") || "";
+  if (saved && allowed.some(x => x.key === saved)) sel.value = saved;
+  else sel.value = "";
+}
+
+/* ---------------- Issues ---------------- */
+function renderActiveIssues(issues) {
+  const ul = $("#activeIssues");
+  if (!ul) return;
 
   const list = (issues || []).filter(x => String(x.status || "").toUpperCase() !== "RESOLVED");
   if (!list.length) {
-    box.innerHTML = `<div class="note">No active issues for this unit.</div>`;
+    ul.innerHTML = `<li class="muted">No active issues.</li>`;
     return;
   }
 
-  box.innerHTML = list.map(iss => {
+  ul.innerHTML = list.map(iss => {
     const note = iss.note || iss.bulletNote || "";
     const status = String(iss.status || "NEW").toUpperCase();
-    return `
-      <div class="issueRow">
-        <div class="issueTitle">${escapeHtml(iss.issueText || "")}</div>
-        <div class="issueMeta">Status: <b>${escapeHtml(status)}</b></div>
-        ${note ? `<div class="issueMeta">Note: ${escapeHtml(note)}</div>` : ""}
-      </div>
-    `;
+    const txt = `${iss.issueText || ""}${note ? ` — ${note}` : ""} (${status})`;
+    return `<li>${escapeHtml(txt)}</li>`;
   }).join("");
 }
 
 async function refreshIssues() {
-  const stationId = currentStationId();
-  const unit = currentUnit();
+  const st = stationId();
+  const ap = apparatusId();
+  if (!ap) {
+    renderActiveIssues([]);
+    return;
+  }
+  const res = await apiGet({ action: "getActiveIssues", stationId: st, apparatusId: ap });
+  renderActiveIssues(res.issues || []);
+}
 
-  if (!unit) {
-    renderIssues([]);
+/* ---------------- Drug Master (Last known exp) ----------------
+   Optional endpoint. If missing, UI still works; it just shows "—".
+*/
+async function loadDrugMaster(unit) {
+  DRUG_MASTER = {};
+  if (!unit) return;
+
+  const res = await apiGetSoft({ action: "getDrugMaster", unit });
+  if (!res?.items?.length) return;
+
+  const map = {};
+  for (const it of res.items) {
+    if (it?.name) map[it.name] = it.exp || "";
+  }
+  DRUG_MASTER = map;
+}
+
+/* ---------------- Form rendering ---------------- */
+function formWrap(html) {
+  return `<div>${html}</div>`;
+}
+
+function renderForm() {
+  const area = $("#formArea");
+  if (!area) return;
+
+  const type = selectedCheckType();
+  if (!type) {
+    area.innerHTML = `<div class="muted">Select a check type to begin.</div>`;
     return;
   }
 
-  const res = await apiGet({ action: "getActiveIssues", stationId, apparatusId: unit });
-  renderIssues(res.issues || []);
-}
+  if (type === "apparatusDaily") {
+    area.innerHTML = formWrap(`
+      <div class="muted">Basic apparatus daily values (expand as needed).</div>
+      <label>Mileage</label><input id="mileage" type="number" min="0" />
+      <label>Engine Hours</label><input id="engineHours" type="number" min="0" />
+      <label>Fuel %</label><input id="fuel" type="number" min="0" max="100" />
+      <label>DEF %</label><input id="def" type="number" min="0" max="100" />
+      <label>Tank Water %</label><input id="tank" type="number" min="0" max="100" />
 
-/* ---------------- drug master (last-known expirations) ---------------- */
-async function loadDrugMaster(unit) {
-  // Backend only supports DrugMaster for units in CONFIG.drugSheets (E-1, T-1)
-  const res = await apiGet({ action: "getDrugMaster", unit });
-  const map = {};
-  for (const it of (res.items || [])) {
-    if (it?.name) map[it.name] = it.exp || "";
-  }
-  LAST_KNOWN_EXP = map;
-  return map;
-}
-
-/* ---------------- medical daily UI rendering ----------------
-   This builds the medication list using CONFIG.drugs + last-known exp.
-   Expects a container #drugRows in your HTML.
-*/
-function renderDrugRows() {
-  const root = $("#drugRows");
-  if (!root) return;
-
-  const drugs = CONFIG?.drugs || [];
-  const defaultQty = CONFIG?.defaultQty || {};
-
-  root.innerHTML = drugs.map((name, idx) => {
-    const last = LAST_KNOWN_EXP[name] || "";
-    const qty = defaultQty[name] ?? "";
-    return `
-      <div class="drugRow" data-drug="${escapeHtml(name)}">
-        <div class="drugName">
-          <b>${escapeHtml(name)}</b>
-          <div class="drugLast">Last known exp: <span class="lastKnownExp">${escapeHtml(last || "—")}</span></div>
-        </div>
-        <div class="drugInputs">
-          <label>Qty</label>
-          <input class="drugQty" type="number" min="0" value="${escapeHtml(qty)}" />
-          <label>Exp</label>
-          <input class="drugExp" type="date" value="${escapeHtml(last)}" />
-        </div>
+      <div class="muted" style="margin-top:10px">
+        This is the “lite” version of the daily form. If you want the full checklist items (Knox keys, radios, etc.)
+        I can wire every one of your existing fields here.
       </div>
-    `;
-  }).join("");
+    `);
+    return;
+  }
+
+  if (type === "medicalDaily") {
+    const drugs = CONFIG?.drugs || [];
+    const defaultQty = CONFIG?.defaultQty || {};
+
+    const rows = drugs.map((name) => {
+      const last = DRUG_MASTER[name] || "";
+      const qty = (defaultQty[name] ?? "");
+      return `
+        <div class="drugRow" data-drug="${escapeHtml(name)}">
+          <div style="font-weight:800">${escapeHtml(name)}</div>
+          <div class="muted" style="margin:4px 0 10px">
+            Last known Exp: <b>${escapeHtml(last || "—")}</b>
+          </div>
+          <div class="row">
+            <div>
+              <label style="margin-top:0">Qty</label>
+              <input class="drugQty" type="number" min="0" value="${escapeHtml(qty)}" />
+            </div>
+            <div>
+              <label style="margin-top:0">Exp</label>
+              <input class="drugExp" type="date" value="${escapeHtml(last)}" />
+            </div>
+          </div>
+        </div>
+      `;
+    }).join(`<div style="height:10px"></div>`);
+
+    area.innerHTML = formWrap(`
+      <label>O2 Bottle Level (0-2000)</label>
+      <input id="o2" type="number" min="0" max="2000" />
+
+      <label>Airway Equipment</label>
+      <select id="airwayPassFail">
+        <option>Pass</option>
+        <option>Fail</option>
+      </select>
+
+      <label>Airway Notes</label>
+      <textarea id="airwayNotes" placeholder="Notes (optional)"></textarea>
+
+      <div class="hr"></div>
+      <div style="font-weight:800; margin-bottom:8px">Medications</div>
+      <div class="muted" style="margin-bottom:10px">
+        Exp defaults to last known expiration if available. Update as needed.
+      </div>
+      ${rows || `<div class="muted">No drug list found in config.</div>`}
+    `);
+    return;
+  }
+
+  if (type === "scbaWeekly") {
+    area.innerHTML = formWrap(`
+      <div class="muted">Enter up to 4 SCBA rows.</div>
+      ${[1,2,3,4].map(i => `
+        <div class="drugRow" style="margin-top:${i===1?0:10}px">
+          <div style="font-weight:800;margin-bottom:6px">SCBA ${i}</div>
+          <label style="margin-top:0">SCBA Label</label><input class="scbaLabel" />
+          <label>Bottle PSI (0-4500)</label><input class="scbaPsi" type="number" min="0" max="4500" />
+          <label>PASS</label>
+          <select class="scbaPassFail"><option>Pass</option><option>Fail</option></select>
+          <label>Notes</label><input class="scbaNotes" />
+        </div>
+      `).join("")}
+    `);
+    return;
+  }
+
+  if (type === "pumpWeekly") {
+    area.innerHTML = formWrap(`
+      <label>Pump Shift</label><input id="pumpShift" placeholder="Pass / Fail or notes"/>
+      <label>Throttle Valves</label><input id="throttle" placeholder="Pass / Fail or notes"/>
+      <label>Relief Valve</label><input id="relief" placeholder="Pass / Fail or notes"/>
+      <label>Gauges</label><input id="gauges" placeholder="Pass / Fail or notes"/>
+      <label>Overall</label>
+      <select id="overall"><option>Pass</option><option>Fail</option></select>
+      <label>Notes</label><textarea id="pumpNotes"></textarea>
+    `);
+    return;
+  }
+
+  if (type === "aerialWeekly") {
+    area.innerHTML = formWrap(`
+      <div class="muted">Aerial weekly (basic).</div>
+      <label>Overall</label>
+      <select id="aerialOverall"><option>Pass</option><option>Fail</option></select>
+      <label>Notes</label>
+      <textarea id="aerialNotes"></textarea>
+      <div class="muted" style="margin-top:10px">
+        If you want every aerial switch/step as separate fields (master, outriggers, ladder extend, nozzle, etc.),
+        I’ll wire them all.
+      </div>
+    `);
+    return;
+  }
+
+  if (type === "sawWeekly") {
+    area.innerHTML = formWrap(`
+      <div class="muted">Enter up to 4 saw rows.</div>
+      ${[1,2,3,4].map(i => `
+        <div class="drugRow" style="margin-top:${i===1?0:10}px">
+          <div style="font-weight:800;margin-bottom:6px">Saw ${i}</div>
+          <label style="margin-top:0">Type (Roof/Rotary)</label><input class="sawType" />
+          <label>Saw #</label><input class="sawNumber" type="number" min="0" />
+          <label>Fuel %</label><input class="sawFuel" type="number" min="0" max="100" />
+          <label>Bar Oil %</label><input class="sawBarOil" type="number" min="0" max="100" />
+          <label>Runs</label>
+          <select class="sawRuns"><option>Yes</option><option>No</option></select>
+          <label>Notes</label><input class="sawNotes" />
+        </div>
+      `).join("")}
+    `);
+    return;
+  }
+
+  if (type === "batteriesWeekly") {
+    area.innerHTML = formWrap(`
+      <label>Battery Tools</label><input id="batteryTools" />
+      <label>4-Gas Monitor Charged</label><input id="gasMonitorCharged" />
+      <label>Unit Phone Charged</label><input id="unitPhoneCharged" />
+      <label>Notes</label><textarea id="batteryNotes"></textarea>
+      <label>Extrication Check</label><input id="extricationCheck" />
+      <label>Spreader</label><input id="spreader" />
+      <label>Cutter</label><input id="cutter" />
+      <label>Ram</label><input id="ram" />
+      <label>All 6 Batteries Charged</label><input id="allCharged" />
+      <label>Damage Noted</label><input id="damage" />
+    `);
+    return;
+  }
+
+  if (type === "oosUnit") {
+    area.innerHTML = formWrap(`
+      <label>Reason</label><textarea id="oosReason"></textarea>
+      <label>Replacing Reserve Unit</label><input id="oosReplacementReserve" placeholder="E-8 / E-9 / E-10 / T-3 etc." />
+      <label>Equipment Moved (list)</label><input id="oosEquipmentMoved" placeholder="comma list" />
+      <label>Return To Service Date (optional)</label><input id="oosRtsDate" type="date" />
+    `);
+    return;
+  }
+
+  if (type === "oosEquipment") {
+    area.innerHTML = formWrap(`
+      <label>Equipment Type (SCBA/Saw/4-Gas/Bag Monitor/Other)</label><input id="eqType" />
+      <label>Identifier</label><input id="eqIdentifier" />
+      <label>Reason</label><textarea id="eqReason"></textarea>
+      <label>Replacement</label><input id="eqReplacement" />
+      <label>Expected RTS Date (optional)</label><input id="eqRtsDate" type="date" />
+    `);
+    return;
+  }
+
+  area.innerHTML = `<div class="muted">Form not implemented for: ${escapeHtml(type)}</div>`;
 }
 
-function readDrugRowsPayload() {
-  const root = $("#drugRows");
-  if (!root) return [];
-
-  const out = [];
-  root.querySelectorAll(".drugRow").forEach(row => {
+/* ---------------- Read payloads ---------------- */
+function readMedicalDailyPayload() {
+  const drugsPayload = [];
+  document.querySelectorAll("#formArea .drugRow").forEach(row => {
     const name = row.getAttribute("data-drug") || "";
     const qty = Number(row.querySelector(".drugQty")?.value || 0);
     const exp = String(row.querySelector(".drugExp")?.value || "").trim();
-
-    // Only include drugs that have an exp date filled out (keeps payload smaller)
-    if (name && exp) out.push({ name, qty, exp });
+    if (name && exp) drugsPayload.push({ name, qty, exp });
   });
-  return out;
-}
 
-/* ---------------- submit medical daily example ----------------
-   You can adapt this exact pattern to apparatusDaily, pumpWeekly, etc.
-   This assumes you have a button with id #btnSubmitMedicalDaily
-   and inputs: #o2Level, #airwayPassFail, #airwayNotes
-*/
-async function submitMedicalDaily() {
-  const submitter = requireSubmitter();
-  const stationId = currentStationId();
-  const unit = currentUnit();
-  if (!unit) throw new Error("Select a Unit");
-
-  const payload = {
-    o2: Number($("#o2Level")?.value || 0),
+  return {
+    o2: Number($("#o2")?.value || 0),
     airwayPassFail: ($("#airwayPassFail")?.value || "Pass"),
     airwayNotes: ($("#airwayNotes")?.value || ""),
-    drugs: readDrugRowsPayload(),
+    drugs: drugsPayload
   };
+}
 
-  const newIssueText = ($("#newIssueText")?.value || "").trim();
+function readScbaWeeklyPayload() {
+  const entries = [];
+  document.querySelectorAll("#formArea .drugRow").forEach(card => {
+    const label = card.querySelector(".scbaLabel")?.value?.trim() || "";
+    const psi = Number(card.querySelector(".scbaPsi")?.value || 0);
+    const passFail = card.querySelector(".scbaPassFail")?.value || "Pass";
+    const notes = card.querySelector(".scbaNotes")?.value || "";
+    if (label || psi || notes) entries.push({ label, psi, passFail, notes });
+  });
+  return { entries };
+}
+
+function readSawWeeklyPayload() {
+  const entries = [];
+  document.querySelectorAll("#formArea .drugRow").forEach(card => {
+    const type = card.querySelector(".sawType")?.value?.trim() || "";
+    const number = Number(card.querySelector(".sawNumber")?.value || 0);
+    const fuel = Number(card.querySelector(".sawFuel")?.value || 0);
+    const barOil = Number(card.querySelector(".sawBarOil")?.value || 0);
+    const runs = card.querySelector(".sawRuns")?.value || "Yes";
+    const notes = card.querySelector(".sawNotes")?.value || "";
+    if (type || number || notes) entries.push({ type, number, fuel, barOil, runs, notes });
+  });
+  return { entries };
+}
+
+/* ---------------- Save ---------------- */
+async function onSave() {
+  const submitter = requireWho();
+  const st = stationId();
+  const ap = apparatusId();
+  const type = selectedCheckType();
+
+  if (!st) throw new Error("Station is required.");
+  if (!ap) throw new Error("Apparatus is required.");
+  if (!type) throw new Error("Check Type is required.");
+
+  // Build checkPayload per type
+  let checkPayload = {};
+
+  if (type === "apparatusDaily") {
+    checkPayload = {
+      mileage: Number($("#mileage")?.value || 0),
+      engineHours: Number($("#engineHours")?.value || 0),
+      fuel: Number($("#fuel")?.value || 0),
+      def: Number($("#def")?.value || 0),
+      tank: Number($("#tank")?.value || 0),
+    };
+  } else if (type === "medicalDaily") {
+    checkPayload = readMedicalDailyPayload();
+  } else if (type === "scbaWeekly") {
+    checkPayload = readScbaWeeklyPayload();
+  } else if (type === "pumpWeekly") {
+    checkPayload = {
+      pumpShift: $("#pumpShift")?.value || "Pass",
+      throttle: $("#throttle")?.value || "Pass",
+      relief: $("#relief")?.value || "Pass",
+      gauges: $("#gauges")?.value || "Pass",
+      overall: $("#overall")?.value || "Pass",
+      notes: $("#pumpNotes")?.value || "",
+    };
+  } else if (type === "aerialWeekly") {
+    checkPayload = {
+      overall: $("#aerialOverall")?.value || "Pass",
+      notes: $("#aerialNotes")?.value || "",
+    };
+  } else if (type === "sawWeekly") {
+    checkPayload = readSawWeeklyPayload();
+  } else if (type === "batteriesWeekly") {
+    checkPayload = {
+      batteryTools: $("#batteryTools")?.value || "",
+      gasMonitorCharged: $("#gasMonitorCharged")?.value || "",
+      unitPhoneCharged: $("#unitPhoneCharged")?.value || "",
+      notes: $("#batteryNotes")?.value || "",
+      extricationCheck: $("#extricationCheck")?.value || "",
+      spreader: $("#spreader")?.value || "",
+      cutter: $("#cutter")?.value || "",
+      ram: $("#ram")?.value || "",
+      allCharged: $("#allCharged")?.value || "",
+      damage: $("#damage")?.value || "",
+    };
+  } else if (type === "oosUnit") {
+    checkPayload = {
+      reason: $("#oosReason")?.value || "",
+      replacementReserve: $("#oosReplacementReserve")?.value || "",
+      equipmentMoved: $("#oosEquipmentMoved")?.value || "",
+      rtsDate: $("#oosRtsDate")?.value || "",
+    };
+  } else if (type === "oosEquipment") {
+    checkPayload = {
+      type: $("#eqType")?.value || "",
+      identifier: $("#eqIdentifier")?.value || "",
+      reason: $("#eqReason")?.value || "",
+      replacement: $("#eqReplacement")?.value || "",
+      rtsDate: $("#eqRtsDate")?.value || "",
+    };
+  }
+
+  const newIssueText = ($("#newIssue")?.value || "").trim();
   const newIssueNote = ($("#newIssueNote")?.value || "").trim();
 
+  setStatus("Saving…");
   await apiPost({
     action: "saveCheck",
-    stationId,
-    apparatusId: unit,
+    stationId: st,
+    apparatusId: ap,
     submitter,
-    checkType: "medicalDaily",
-    checkPayload: payload,
+    checkType: type,
+    checkPayload,
     newIssueText,
     newIssueNote
   });
 
-  toast("Medical Daily saved");
+  // Clear only the new issue fields (so they don’t resend duplicates)
+  if ($("#newIssue")) $("#newIssue").value = "";
+  if ($("#newIssueNote")) $("#newIssueNote").value = "";
 
-  // refresh last-known after submit (since DrugMaster updates in backend)
-  await loadDrugMaster(unit);
-  renderDrugRows();
-  await refreshIssues();
-}
-
-/* ---------------- boot / wiring ---------------- */
-async function onStationChanged() {
-  const stationId = currentStationId();
-  await loadApparatus(stationId);
-  savePrefs();
-
-  // unit may have changed/reset
-  await onUnitChanged();
-}
-
-async function onUnitChanged() {
-  const unit = currentUnit();
-  savePrefs();
-
-  // Issues
+  // Refresh issues
   await refreshIssues();
 
-  // Drug master + render drug list (only if medical UI is on screen)
-  if (CONFIG?.drugs?.length && $("#drugRows")) {
-    LAST_KNOWN_EXP = {};
-    if (unit) {
-      try {
-        await loadDrugMaster(unit);
-      } catch (e) {
-        // Unit may not have drug master configured; just render with blanks
-        LAST_KNOWN_EXP = {};
-      }
-    }
-    renderDrugRows();
+  // Refresh drug master after medical save (so last-known updates)
+  if (type === "medicalDaily") {
+    await loadDrugMaster(ap);
+    renderForm(); // re-render so Last Known Exp updates visually
   }
+
+  setStatus("Saved ✅");
 }
 
+/* ---------------- Events ---------------- */
+async function onStationChange() {
+  savePrefs();
+  setStatus("Loading apparatus…");
+  await loadApparatusForStation(stationId());
+  renderCheckTypeOptions();
+  await onApparatusChange();
+}
+
+async function onApparatusChange() {
+  savePrefs();
+  renderCheckTypeOptions();
+
+  setStatus("Loading issues…");
+  await refreshIssues();
+
+  // Preload drug master for medical daily if needed
+  const ap = apparatusId();
+  await loadDrugMaster(ap);
+
+  renderForm();
+  setStatus("Ready.");
+}
+
+async function onCheckTypeChange() {
+  savePrefs();
+
+  // For medical daily, make sure drug master has been loaded
+  if (selectedCheckType() === "medicalDaily") {
+    await loadDrugMaster(apparatusId());
+  }
+
+  renderForm();
+}
+
+/* ---------------- Boot ---------------- */
 async function boot() {
-  loadPrefs();
+  setStatus("Loading…");
 
-  // Wire station/unit change
-  $("#stationSelect")?.addEventListener("change", () => {
-    onStationChanged().catch(err => toast(err.message, 3200));
-  });
-
-  $("#unitSelect")?.addEventListener("change", () => {
-    onUnitChanged().catch(err => toast(err.message, 3200));
-  });
-
-  // Submit medical daily
-  $("#btnSubmitMedicalDaily")?.addEventListener("click", () => {
+  // listeners
+  $("#station")?.addEventListener("change", () => onStationChange().catch(e => setStatus(e.message, true)));
+  $("#apparatus")?.addEventListener("change", () => onApparatusChange().catch(e => setStatus(e.message, true)));
+  $("#checkType")?.addEventListener("change", () => onCheckTypeChange().catch(e => setStatus(e.message, true)));
+  $("#saveBtn")?.addEventListener("click", () => {
     savePrefs();
-    submitMedicalDaily().catch(err => toast(err.message, 3200));
+    onSave().catch(e => setStatus(e.message, true));
   });
 
-  try {
-    await loadConfig();
-    await loadApparatus(currentStationId());
-    await onUnitChanged();
-    toast("Loaded");
-  } catch (err) {
-    toast(err.message, 3200);
-  }
+  // init
+  loadPrefs();
+  await loadConfig();
+  await loadApparatusForStation(stationId());
+
+  // Ensure dropdowns reflect rules
+  renderCheckTypeOptions();
+
+  // Re-apply prefs after options exist
+  const savedStation = localStorage.getItem("dfd_station") || "1";
+  const savedAp = localStorage.getItem("dfd_apparatus") || "";
+  const savedType = localStorage.getItem("dfd_checkType") || "";
+
+  if ($("#station")) $("#station").value = savedStation;
+  if ($("#apparatus")) $("#apparatus").value = savedAp;
+  renderCheckTypeOptions();
+  if ($("#checkType")) $("#checkType").value = savedType;
+
+  // Load dependent data
+  await onApparatusChange();
 }
 
-document.addEventListener("DOMContentLoaded", boot);
+document.addEventListener("DOMContentLoaded", () => {
+  boot().catch(err => setStatus(err.message, true));
+});
