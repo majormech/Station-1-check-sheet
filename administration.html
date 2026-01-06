@@ -96,6 +96,67 @@
       display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;
     }
     .emailRow textarea{min-width: 420px; flex: 1 1 420px}
+
+    /* -----------------------------
+       Collapsible Issues by Unit
+       + Unit-level NEW/OLD/OK indicator
+       ----------------------------- */
+    .unit-group{
+      border:1px solid var(--line);
+      border-radius:12px;
+      overflow:hidden;
+      margin: 10px 0;
+      background:#fff;
+    }
+    .unit-summary{
+      list-style:none;
+      cursor:pointer;
+      padding:12px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      user-select:none;
+    }
+    .unit-summary::-webkit-details-marker{display:none}
+    .unit-left{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      min-width:0;
+      flex-wrap:wrap;
+    }
+    .unit-title{font-weight:900}
+    .unit-meta{display:flex;gap:8px;flex-wrap:wrap}
+    .unit-count{font-weight:900;opacity:.65}
+    .unit-body{padding:10px 10px 12px}
+
+    .badge{
+      display:inline-block;
+      padding:2px 8px;
+      border-radius:999px;
+      font-size:12px;
+      font-weight:800;
+    }
+    .badge.b-new{background:rgba(200,30,30,.10);border:1px solid rgba(200,30,30,.20)}
+    .badge.b-old{background:rgba(179,123,0,.10);border:1px solid rgba(179,123,0,.20)}
+    .badge.b-ack{background:rgba(31,157,85,.10);border:1px solid rgba(31,157,85,.20)}
+
+    .unit-dot{
+      width:10px;height:10px;border-radius:999px;display:inline-block;
+    }
+    .unit-state{
+      font-weight:900;
+      font-size:12px;
+      padding:2px 8px;
+      border-radius:999px;
+      border:1px solid rgba(0,0,0,.08);
+    }
+
+    /* Priority: NEW > OLD > OK */
+    .u-new{background:#ff3b30 !important; color:#111}
+    .u-old{background:#ffcc00 !important; color:#111}
+    .u-ok {background:#34c759 !important; color:#111}
   </style>
 </head>
 <body>
@@ -177,6 +238,11 @@
               <b>OLD</b> (auto after 96 hours, yellow) •
               <b>ACK</b> (checkbox = green) •
               <b>RESOLVED</b> removes it everywhere and logs who/when.
+              <br/>
+              Unit indicator:
+              <b>RED</b> = unit has unacknowledged NEW •
+              <b>YELLOW</b> = unit has unacknowledged OLD •
+              <b>GREEN</b> = no unacknowledged issues.
             </div>
             <div id="issuesBox" style="display:grid;gap:10px;margin-top:10px"></div>
           </div>
