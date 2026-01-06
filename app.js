@@ -30,6 +30,7 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+/* ---------------- Drug date helpers + color rules ---------------- */
 function parseYMD(s) {
   // Expect "yyyy-MM-dd"
   const m = String(s || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -65,6 +66,23 @@ function prettyDaysLabel(expYmd) {
   return `${d}d`;
 }
 
+function applyDrugColorToRow(rowEl) {
+  if (!rowEl) return;
+
+  // "Exp" input value if user changed it; otherwise fallback to last-known stored on row
+  const expVal = String(rowEl.querySelector(".drugExp")?.value || "").trim();
+  const lastKnown = String(rowEl.getAttribute("data-last-exp") || "").trim();
+  const effective = expVal || lastKnown;
+
+  rowEl.classList.remove("drugRed", "drugYellow", "drugGreen");
+  const cls = drugClassForExp(effective);
+  if (cls) rowEl.classList.add(cls);
+
+  const badge = rowEl.querySelector(".drugDays");
+  if (badge) badge.textContent = effective ? prettyDaysLabel(effective) : "";
+}
+
+/* ---------------- API helpers ---------------- */
 async function apiGet(params) {
   const qs = new URLSearchParams(params);
   const res = await fetch(`/api?${qs.toString()}`, { method: "GET" });
@@ -336,13 +354,25 @@ function renderForm() {
     const rows = drugs.map((name) => {
       const last = DRUG_MASTER[name] || "";
       const qty = (defaultQty[name] ?? "");
+
+      // Effective exp for initial coloring = last known (input starts at last)
+      const effectiveExp = String(last || "").trim();
+      const cls = drugClassForExp(effectiveExp);
+      const daysLbl = effectiveExp ? prettyDaysLabel(effectiveExp) : "";
+
       return `
-        <div class="drugRow" data-drug="${escapeHtml(name)}">
-          <div style="font-weight:800">${escapeHtml(name)}</div>
-          <div class="muted" style="margin:4px 0 10px">
-            Last known Exp: <b>${escapeHtml(last || "—")}</b>
+        <div class="drugRow ${cls}" data-drug="${escapeHtml(name)}" data-last-exp="${escapeHtml(last)}">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">
+            <div style="min-width:220px">
+              <div style="font-weight:800">${escapeHtml(name)}</div>
+              <div class="muted" style="margin:4px 0 0">
+                Last known Exp: <b>${escapeHtml(last || "—")}</b>
+                ${daysLbl ? `<span class="pill" style="margin-left:8px"><span class="drugDays">${escapeHtml(daysLbl)}</span></span>` : `<span class="pill" style="margin-left:8px"><span class="drugDays"></span></span>`}
+              </div>
+            </div>
           </div>
-          <div class="row">
+
+          <div class="row" style="margin-top:10px">
             <div>
               <label style="margin-top:0">Qty</label>
               <input class="drugQty" type="number" min="0" value="${escapeHtml(qty)}" />
@@ -372,10 +402,26 @@ function renderForm() {
       <div class="hr"></div>
       <div style="font-weight:800; margin-bottom:8px">Medications</div>
       <div class="muted" style="margin-bottom:10px">
-        Exp defaults to last known expiration if available. Update as needed.
+        Color coding: <b>Red</b> &lt; 14 days • <b>Yellow</b> &lt; 30 days • <b>Green</b> ≥ 30 days.
       </div>
       ${rows || `<div class="muted">No drug list found in config.</div>`}
     `);
+
+    // Live recolor on date change
+    area.querySelectorAll(".drugExp").forEach(inp => {
+      inp.addEventListener("change", (e) => {
+        const row = e.target.closest(".drugRow");
+        applyDrugColorToRow(row);
+      });
+      inp.addEventListener("input", (e) => {
+        const row = e.target.closest(".drugRow");
+        applyDrugColorToRow(row);
+      });
+    });
+
+    // Ensure colors correct even if browser formats date oddly
+    area.querySelectorAll(".drugRow").forEach(row => applyDrugColorToRow(row));
+
     return;
   }
 
@@ -489,7 +535,12 @@ function readMedicalDailyPayload() {
   document.querySelectorAll("#formArea .drugRow").forEach(row => {
     const name = row.getAttribute("data-drug") || "";
     const qty = Number(row.querySelector(".drugQty")?.value || 0);
-    const exp = String(row.querySelector(".drugExp")?.value || "").trim();
+
+    // Prefer user-entered exp; if blank, fallback to last known (so save won't drop dates)
+    const expInput = String(row.querySelector(".drugExp")?.value || "").trim();
+    const lastKnown = String(row.getAttribute("data-last-exp") || "").trim();
+    const exp = expInput || lastKnown;
+
     if (name && exp) drugsPayload.push({ name, qty, exp });
   });
 
@@ -624,7 +675,7 @@ async function onSave() {
   // Refresh drug master after medical save (so last-known updates)
   if (type === "medicalDaily") {
     await loadDrugMaster(ap);
-    renderForm(); // re-render so Last Known Exp updates visually
+    renderForm(); // re-render so Last Known Exp updates visually + recolor
   }
 
   setStatus("Saved ✅");
