@@ -128,17 +128,17 @@ function renderStatus(status) {
     };
 
     const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${escapeHtml(r.stationName || r.stationId)}</td>
-      <td><b>${escapeHtml(r.apparatusId)}</b></td>
-      <td>${cell(req.apparatusDaily, c.apparatusDaily)}</td>
-      <td>${cell(req.medicalDaily,   c.medicalDaily)}</td>
-      <td>${cell(req.scbaWeekly,     c.scbaWeekly)}</td>
-      <td>${cell(req.pumpWeekly,     c.pumpWeekly)}</td>
-      <td>${cell(req.aerialWeekly,   c.aerialWeekly)}</td>
-      <td>${cell(req.sawWeekly,      c.sawWeekly)}</td>
-      <td>${cell(req.batteriesWeekly,c.batteriesWeekly)}</td>
-    `;
+tr.innerHTML = `
+  <td data-label="Station">${...}</td>
+  <td data-label="Apparatus">${...}</td>
+  <td data-label="Apparatus Daily">${...}</td>
+  <td data-label="Medical Daily">${...}</td>
+  <td data-label="SCBA Weekly">${...}</td>
+  <td data-label="Pump Weekly">${...}</td>
+  <td data-label="Aerial Weekly">${...}</td>
+  <td data-label="Saws Weekly">${...}</td>
+  <td data-label="Batteries Weekly">${...}</td>
+`;
     tb.appendChild(tr);
   }
 }
