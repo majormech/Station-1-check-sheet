@@ -1,21 +1,20 @@
 /* DFD Administration UI (Cloudflare Pages)
    IMPORTANT: This UI talks ONLY to /api (Cloudflare Function proxy).
+
    Endpoints used:
      GET  /api?action=getAdminStatus
      GET  /api?action=getWeeklyConfig
-     GET  /api?action=listIssues&stationId=1&includeCleared=false   (legacy)
-     GET  /api?action=getEmailConfig
+     GET  /api?action=listIssues&stationId=1&includeCleared=false
      POST /api  {action:"setWeeklyDay"...}
      POST /api  {action:"updateIssue"...}
-     POST /api  {action:"setEmailConfig"...}
 
    NOTE:
-     This file now supports a station filter dropdown:
-       - "all" = overall
-       - "1".."7" = station-specific view
+     Overall (All Stations) issues are loaded by fetching each station (1..7)
+     and merging results client-side. No GAS changes needed.
 */
 
 const $ = (s) => document.querySelector(s);
+const STATIONS = ["1","2","3","4","5","6","7"];
 
 function toast(msg, ms = 2200) {
   const t = $("#toast");
@@ -45,8 +44,7 @@ function adminName() {
 }
 
 function selectedStationFilter() {
-  const v = ($("#adminStationFilter")?.value || "all").trim();
-  return v || "all";
+  return ($("#adminStationFilter")?.value || "all").trim() || "all";
 }
 
 async function apiGet(params) {
@@ -56,7 +54,7 @@ async function apiGet(params) {
   let json;
   try {
     json = JSON.parse(text);
-  } catch (e) {
+  } catch {
     throw new Error(`Bad JSON from /api: ${text.slice(0, 160)}`);
   }
   if (!json.ok) throw new Error(json.error || "Request failed");
@@ -73,7 +71,7 @@ async function apiPost(body) {
   let json;
   try {
     json = JSON.parse(text);
-  } catch (e) {
+  } catch {
     throw new Error(`Bad JSON from /api: ${text.slice(0, 160)}`);
   }
   if (!json.ok) throw new Error(json.error || "Request failed");
@@ -134,10 +132,8 @@ function renderStatus(status) {
   tb.innerHTML = "";
 
   const filter = selectedStationFilter();
-
-  // status.rows items look like:
-  // { stationId, stationName, apparatusId, checks:{...} }
   let rows = status.rows || [];
+
   if (filter !== "all") {
     rows = rows.filter(r => String(r.stationId || "") === String(filter));
   }
@@ -235,7 +231,6 @@ function computedIssueStatus_(iss) {
   return ageHours >= 96 ? "OLD" : "NEW";
 }
 
-/* ---------- Group issues by apparatus ---------- */
 function groupByApparatus_(issues) {
   const map = new Map();
   for (const iss of (issues || [])) {
@@ -391,10 +386,7 @@ function renderIssues(issues) {
     `;
 
     const body = details.querySelector(".unit-body");
-    for (const iss of unitIssues) {
-      body.appendChild(renderIssueRow_(iss));
-    }
-
+    for (const iss of unitIssues) body.appendChild(renderIssueRow_(iss));
     box.appendChild(details);
   }
 }
@@ -408,23 +400,17 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
-/* ---------- Filtering helpers ---------- */
+/* ---------- Filtered Issues Title ---------- */
 function stationLabel_(id) {
   if (id === "all") return "Overall (All Stations)";
   return `Station ${id}`;
 }
-
 function setIssuesTitle_() {
   const f = selectedStationFilter();
   const el = $("#issuesTitle");
   if (!el) return;
   el.textContent = (f === "all") ? "Active Issues (All Stations)" : `Active Issues (${stationLabel_(f)})`;
 }
-
-/* ---------- Email config UI (existing endpoints; not modified here) ----------
-   If you already have station-scoped email groups, you will render them elsewhere.
-   This station filter change is only for status + issues display.
-*/
 
 /* ---------- Refresh ---------- */
 let LAST_ADMIN_STATUS = null;
@@ -439,7 +425,6 @@ async function refreshStatusAndConfig() {
   renderWeeklyConfig(cfg);
 }
 
-// Build a station->apparatus set from getAdminStatus rows
 function apparatusSetForStation_(stationId) {
   const set = new Set();
   const rows = (LAST_ADMIN_STATUS?.rows || []);
@@ -449,30 +434,46 @@ function apparatusSetForStation_(stationId) {
   return set;
 }
 
+async function fetchIssuesForStation_(stationId) {
+  const res = await apiGet({ action: "listIssues", stationId: String(stationId), includeCleared: "false" });
+  return res.issues || [];
+}
+
+function dedupeIssuesById_(issues) {
+  const map = new Map();
+  for (const iss of issues || []) {
+    const id = iss?.issueId || "";
+    if (!id) continue;
+    // Keep the most recently updated version if duplicates appear
+    const prev = map.get(id);
+    if (!prev) {
+      map.set(id, iss);
+      continue;
+    }
+    const pT = new Date(prev.lastUpdatedAt || prev.createdAt || 0).getTime();
+    const nT = new Date(iss.lastUpdatedAt || iss.createdAt || 0).getTime();
+    if (nT >= pT) map.set(id, iss);
+  }
+  return Array.from(map.values());
+}
+
 async function refreshIssues() {
-  // We fetch station 1 legacy endpoint today, but if you later add a new
-  // listIssuesAll endpoint in GAS, you can switch to it.
-  //
-  // For NOW: we pull stationId=1 for backward compatibility, but also support overall
-  // by filtering from the full list only if you already changed GAS to return all.
-  //
-  // Best: update GAS to allow listIssues with stationId=all.
   const f = selectedStationFilter();
 
-  // Try: if your GAS already supports stationId=all, use it.
-  const stationIdParam = (f === "all") ? "all" : String(f);
+  let issues = [];
 
-  let res;
-  try {
-    res = await apiGet({ action: "listIssues", stationId: stationIdParam, includeCleared: "false" });
-  } catch (e) {
-    // fallback to old behavior (Station 1 only)
-    res = await apiGet({ action: "listIssues", stationId: "1", includeCleared: "false" });
+  if (f === "all") {
+    // ✅ KEY FIX: pull each station and merge
+    const results = await Promise.all(
+      STATIONS.map(st => fetchIssuesForStation_(st).catch(() => []))
+    );
+    issues = dedupeIssuesById_(results.flat());
+  } else {
+    issues = await fetchIssuesForStation_(f);
   }
 
-  let issues = res.issues || [];
-
-  // If server returns all stations, we filter client-side by station selection:
+  // If backend returns issues without station info, we still can filter by
+  // allowed apparatus list from status rows (extra safety)
   if (f !== "all") {
     const allowedUnits = apparatusSetForStation_(f);
     issues = issues.filter(iss => allowedUnits.has(String(iss.apparatusId || "").trim()));
@@ -506,8 +507,11 @@ async function boot() {
     try{
       savePrefs();
       setIssuesTitle_();
-      // status table uses filter directly on render
+
+      // Status can re-render immediately from cached status (if available)
       renderStatus(LAST_ADMIN_STATUS || { rows: [] });
+
+      // Issues must re-fetch for "all" (multi-station)
       await refreshIssues();
       toast("Filter applied");
     }catch(err){
