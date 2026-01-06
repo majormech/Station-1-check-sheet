@@ -30,6 +30,41 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+function parseYMD(s) {
+  // Expect "yyyy-MM-dd"
+  const m = String(s || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]), mo = Number(m[2]) - 1, d = Number(m[3]);
+  const dt = new Date(Date.UTC(y, mo, d, 0, 0, 0));
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function daysUntil(expYmd) {
+  const exp = parseYMD(expYmd);
+  if (!exp) return null;
+
+  // Compare in whole days using UTC midnight so timezones don’t shift it
+  const now = new Date();
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const diffMs = exp.getTime() - todayUtc.getTime();
+  return Math.floor(diffMs / 86400000); // can be negative if expired
+}
+
+function drugClassForExp(expYmd) {
+  const d = daysUntil(expYmd);
+  if (d == null) return "";        // no date -> no color
+  if (d < 14) return "drugRed";    // < 2 weeks (includes expired)
+  if (d < 30) return "drugYellow"; // < 30 days
+  return "drugGreen";             // >= 30 days
+}
+
+function prettyDaysLabel(expYmd) {
+  const d = daysUntil(expYmd);
+  if (d == null) return "";
+  if (d < 0) return `Expired ${Math.abs(d)}d`;
+  return `${d}d`;
+}
+
 async function apiGet(params) {
   const qs = new URLSearchParams(params);
   const res = await fetch(`/api?${qs.toString()}`, { method: "GET" });
