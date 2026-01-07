@@ -30,6 +30,22 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+/* Normalize any incoming date-ish value to HTML date input format: YYYY-MM-DD */
+function toYmdDateInput(v) {
+  if (!v) return "";
+  const s = String(v).trim();
+
+  // already correct
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  // try to parse common formats (best-effort)
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "";
+
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function parseYMD(s) {
   // Expect "yyyy-MM-dd"
   const m = String(s || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -149,7 +165,7 @@ function requirementsFor(apparatusIdRaw) {
 /* ---------------- State ---------------- */
 let CONFIG = null;
 let APPARATUS = [];
-let DRUG_MASTER = {}; // name -> lastKnownExp
+let DRUG_MASTER = {}; // name -> lastKnownExp (normalized yyyy-MM-dd)
 
 /* ---------------- Prefs ---------------- */
 function loadPrefs() {
@@ -292,7 +308,8 @@ async function loadDrugMaster(unit) {
 
   const map = {};
   for (const it of res.items) {
-    if (it?.name) map[it.name] = it.exp || "";
+    if (!it?.name) continue;
+    map[it.name] = toYmdDateInput(it.exp || "");
   }
   DRUG_MASTER = map;
 }
@@ -401,7 +418,7 @@ function renderForm() {
     const defaultQty = CONFIG?.defaultQty || {};
 
     const rows = drugs.map((name) => {
-      const last = DRUG_MASTER[name] || "";
+      const last = toYmdDateInput(DRUG_MASTER[name] || "");
       const qty = (defaultQty[name] ?? "");
       const cls = drugClassForExp(last);
       const days = prettyDaysLabel(last);
@@ -453,7 +470,8 @@ function renderForm() {
       const expInput = row.querySelector(".drugExp");
       if (!expInput) return;
       expInput.addEventListener("change", () => {
-        const v = expInput.value || "";
+        const v = toYmdDateInput(expInput.value || "");
+        expInput.value = v; // keep it normalized
         row.classList.remove("drugRed","drugYellow","drugGreen");
         const cls = drugClassForExp(v);
         if (cls) row.classList.add(cls);
@@ -573,7 +591,7 @@ function readMedicalDailyPayload() {
   document.querySelectorAll("#formArea .drugRow").forEach(row => {
     const name = row.getAttribute("data-drug") || "";
     const qty = Number(row.querySelector(".drugQty")?.value || 0);
-    const exp = String(row.querySelector(".drugExp")?.value || "").trim();
+    const exp = toYmdDateInput(String(row.querySelector(".drugExp")?.value || "").trim());
     if (name && exp) drugsPayload.push({ name, qty, exp });
   });
 
