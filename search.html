@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DFD Search & Print</title>
+  <style>
+    :root{
+      --brand:#c41212; --brand-ink:#fff; --ink:#111; --muted:#666;
+      --bg:#fafafa; --card:#ffffff; --line:#eee;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    h1{font-size:18px;margin:0}
+    .wrap{max-width:1200px;margin:18px auto;padding:0 14px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.04);overflow:hidden}
+    .header{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .brand{display:inline-flex;align-items:center;gap:10px}
+    .brand-badge{width:28px;height:28px;border-radius:8px;background:var(--brand)}
+    .grow{flex:1 1 auto}
+    .panel{padding:14px 16px}
+    label{font-weight:800}
+    select,input[type="text"],input[type="date"],input[type="number"]{
+      border:1px solid #ddd;border-radius:10px;padding:9px 10px;outline:none;background:#fff;min-height:38px;font:inherit
+    }
+    .row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+    .btn{appearance:none;border:none;border-radius:10px;padding:9px 14px;font-weight:900;cursor:pointer;background:var(--brand);color:#fff}
+    .btn.secondary{background:#111}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .note{color:var(--muted);font-size:12px}
+
+    .tableWrap{margin-top:12px;overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+    th{position:sticky;top:0;background:#f9f9f9;font-size:12px;text-align:left}
+    tr:last-child td{border-bottom:none}
+    .muted{color:var(--muted)}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:900;background:#eee}
+
+    /* PRINT */
+    @media print{
+      body{background:#fff}
+      .noPrint{display:none !important}
+      .wrap{max-width:none;margin:0;padding:0}
+      .card{border:none;border-radius:0;box-shadow:none}
+      .tableWrap{border:none;border-radius:0}
+      th{position:static}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="header noPrint">
+        <div class="brand">
+          <div class="brand-badge"></div>
+          <h1>DFD Search & Print</h1>
+        </div>
+        <div class="grow"></div>
+        <button class="btn secondary" id="btnPrint">Print</button>
+      </div>
+
+      <div class="panel">
+        <div class="row noPrint">
+          <div>
+            <label>Station</label><br/>
+            <select id="station">
+              <option value="all">All Stations</option>
+            </select>
+          </div>
+
+          <div>
+            <label>Apparatus</label><br/>
+            <select id="apparatus">
+              <option value="all">All Apparatus</option>
+            </select>
+          </div>
+
+          <div>
+            <label>Category</label><br/>
+            <select id="category">
+              <option value="issues">Issues</option>
+              <option value="apparatusDaily">Apparatus Daily</option>
+              <option value="medicalDaily">Medical Daily</option>
+              <option value="scbaWeekly">SCBA Weekly</option>
+              <option value="pumpWeekly">Pump Weekly</option>
+              <option value="aerialWeekly">Aerial Weekly</option>
+              <option value="sawWeekly">Saws Weekly</option>
+              <option value="batteriesWeekly">Batteries Weekly</option>
+              <option value="oosUnit">Unit Out of Service</option>
+              <option value="oosEquipment">Equipment Out of Service</option>
+              <option value="medAlerts">Med Expiration Alerts (Log)</option>
+            </select>
+          </div>
+
+          <div>
+            <label>From</label><br/>
+            <input id="from" type="date" />
+          </div>
+
+          <div>
+            <label>To</label><br/>
+            <input id="to" type="date" />
+          </div>
+
+          <div style="flex:1 1 240px;min-width:240px">
+            <label>Keyword</label><br/>
+            <input id="q" type="text" placeholder="Name, note, issue text, etc." style="width:100%" />
+          </div>
+
+          <div>
+            <label>Limit</label><br/>
+            <input id="limit" type="number" min="1" max="1000" value="200" style="width:90px" />
+          </div>
+
+          <button class="btn" id="btnSearch">Search</button>
+        </div>
+
+        <div class="note noPrint" id="status">Ready.</div>
+
+        <div class="tableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Station</th>
+                <th>Apparatus</th>
+                <th>Submitter</th>
+                <th>Category</th>
+                <th>Summary</th>
+              </tr>
+            </thead>
+            <tbody id="rows">
+              <tr><td colspan="6" class="muted">Run a search to see results.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="note" style="margin-top:10px">
+          Tip: Use Print to generate a paper copy or PDF. The header/filters are hidden in print.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./search.js"></script>
+</body>
+</html>
