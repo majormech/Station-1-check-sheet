@@ -1,11 +1,13 @@
 /* DFD Administration UI (Cloudflare Pages)
-   IMPORTANT: This UI talks ONLY to /api (Cloudflare Function proxy).
+   Admin UI now handles ONLY:
+     - Apparatus status dashboard
+     - Issues (ACK / NEW / OLD / RESOLVED)
+
+   Talks ONLY to /api (Cloudflare Function proxy).
 
    Endpoints used:
      GET  /api?action=getAdminStatus
-     GET  /api?action=getWeeklyConfig
      GET  /api?action=listIssues&stationId=1&includeCleared=false
-     POST /api  {action:"setWeeklyDay"...}
      POST /api  {action:"updateIssue"...}
 
    NOTE:
@@ -18,27 +20,34 @@ const STATIONS = ["1","2","3","4","5","6","7"];
 
 function toast(msg, ms = 2200) {
   const t = $("#toast");
-  $("#toastText").textContent = msg || "Saved";
+  const txt = $("#toastText");
+  if (!t || !txt) return;
+  txt.textContent = msg || "Saved";
   t.classList.add("show");
   setTimeout(() => t.classList.remove("show"), ms);
 }
 
 function loadPrefs() {
   const name = localStorage.getItem("dfd_admin_name") || "";
-  $("#adminName").value = name;
+  const nameEl = $("#adminName");
+  if (nameEl) nameEl.value = name;
 
   const filter = localStorage.getItem("dfd_admin_station_filter") || "all";
   const sel = $("#adminStationFilter");
   if (sel) sel.value = filter;
 }
+
 function savePrefs() {
-  localStorage.setItem("dfd_admin_name", ($("#adminName").value || "").trim());
+  const nameEl = $("#adminName");
+  if (nameEl) localStorage.setItem("dfd_admin_name", (nameEl.value || "").trim());
+
   const sel = $("#adminStationFilter");
   if (sel) localStorage.setItem("dfd_admin_station_filter", sel.value || "all");
 }
 
 function adminName() {
-  const n = ($("#adminName").value || "").trim();
+  const el = $("#adminName");
+  const n = (el?.value || "").trim();
   if (!n) throw new Error("Enter Admin Name (for logging)");
   return n;
 }
@@ -65,7 +74,7 @@ async function apiPost(body) {
   const res = await fetch(`/api`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Accept": "application/json" },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
   const text = await res.text();
   let json;
@@ -94,7 +103,7 @@ function requirementsFor(apparatusIdRaw) {
     pumpWeekly: true,
     aerialWeekly: true,
     sawWeekly: true,
-    batteriesWeekly: true
+    batteriesWeekly: true,
   };
 
   if (id === "E-1") {
@@ -115,7 +124,16 @@ function requirementsFor(apparatusIdRaw) {
   return req;
 }
 
-/* ---------- UI builders ---------- */
+/* ---------- Helpers ---------- */
+function escapeHtml(s) {
+  return String(s || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function pill(okOrNull, lastIso) {
   if (okOrNull === null) {
     return `<span class="pill na">N/A</span><span class="sub">—</span>`;
@@ -124,18 +142,23 @@ function pill(okOrNull, lastIso) {
   const lastStr = last ? last.toLocaleString() : "—";
   const cls = okOrNull ? "ok" : "bad";
   const label = okOrNull ? "DONE" : "NOT DONE";
-  return `<span class="pill ${cls}">${label}</span><span class="sub">Last: ${lastStr}</span>`;
+  return `<span class="pill ${cls}">${label}</span><span class="sub">Last: ${escapeHtml(lastStr)}</span>`;
 }
+
+/* ---------- Status ---------- */
+let LAST_ADMIN_STATUS = null;
 
 function renderStatus(status) {
   const tb = $("#statusTable tbody");
+  if (!tb) return;
+
   tb.innerHTML = "";
 
   const filter = selectedStationFilter();
-  let rows = status.rows || [];
+  let rows = status?.rows || [];
 
   if (filter !== "all") {
-    rows = rows.filter(r => String(r.stationId || "") === String(filter));
+    rows = rows.filter((r) => String(r.stationId || "") === String(filter));
   }
 
   if (!rows.length) {
@@ -168,57 +191,7 @@ function renderStatus(status) {
   }
 }
 
-const WEEKDAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-
-function renderWeeklyConfig(cfg) {
-  const box = $("#weeklyConfigBox");
-  box.innerHTML = "";
-
-  const items = [
-    { key: "scbaWeekly", label: "SCBA Weekly" },
-    { key: "pumpWeekly", label: "Pump Weekly" },
-    { key: "aerialWeekly", label: "Aerial Weekly" },
-    { key: "sawWeekly", label: "Saws Weekly" },
-    { key: "batteriesWeekly", label: "Batteries Weekly" }
-  ];
-
-  for (const it of items) {
-    const current = cfg[it.key] || "Saturday";
-
-    const row = document.createElement("div");
-    row.className = "issue";
-    row.innerHTML = `
-      <div>
-        <h3>${it.label}</h3>
-        <div class="meta">Current: <b>${escapeHtml(current)}</b></div>
-      </div>
-      <div class="right">
-        <select data-key="${it.key}">
-          ${WEEKDAYS.map(d => `<option ${d === current ? "selected" : ""}>${d}</option>`).join("")}
-        </select>
-        <button class="btn" data-save="${it.key}">Save</button>
-      </div>
-    `;
-
-    row.querySelector('button[data-save]')?.addEventListener("click", async () => {
-      try{
-        savePrefs();
-        const key = it.key;
-        const weekday = row.querySelector(`select[data-key="${key}"]`).value;
-        const user = adminName();
-        await apiPost({ action: "setWeeklyDay", checkKey: key, weekday, user });
-        toast(`${it.label} set to ${weekday}`);
-        await refreshAll();
-      }catch(err){
-        toast(err.message, 3200);
-      }
-    });
-
-    box.appendChild(row);
-  }
-}
-
-/* ---------- Issues highlighting + status rules ---------- */
+/* ---------- Issues ---------- */
 function computedIssueStatus_(iss) {
   const raw = String(iss.status || "").toUpperCase();
   if (raw === "RESOLVED") return "RESOLVED";
@@ -233,17 +206,21 @@ function computedIssueStatus_(iss) {
 
 function groupByApparatus_(issues) {
   const map = new Map();
-  for (const iss of (issues || [])) {
+  for (const iss of issues || []) {
     const ap = String(iss.apparatusId || "Unknown").trim() || "Unknown";
     if (!map.has(ap)) map.set(ap, []);
     map.get(ap).push(iss);
   }
-  const keys = Array.from(map.keys()).sort((a,b) => a.localeCompare(b, undefined, { numeric:true, sensitivity:"base" }));
-  return keys.map(k => [k, map.get(k)]);
+  const keys = Array.from(map.keys()).sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+  );
+  return keys.map((k) => [k, map.get(k)]);
 }
 
 function summarizeUnitIssues_(unitIssues) {
-  let newCt = 0, oldCt = 0, ackCt = 0;
+  let newCt = 0,
+    oldCt = 0,
+    ackCt = 0;
   for (const iss of unitIssues) {
     const computed = computedIssueStatus_(iss);
     if (iss.acknowledged) ackCt++;
@@ -261,7 +238,7 @@ function renderIssueRow_(iss) {
   const computedStatus = computedIssueStatus_(iss);
   const acknowledged = !!iss.acknowledged;
 
-  wrap.classList.remove("hl-new","hl-old","hl-ack");
+  wrap.classList.remove("hl-new", "hl-old", "hl-ack");
   if (acknowledged) wrap.classList.add("hl-ack");
   else if (computedStatus === "OLD") wrap.classList.add("hl-old");
   else wrap.classList.add("hl-new");
@@ -293,55 +270,63 @@ function renderIssueRow_(iss) {
     </div>
   `;
 
-  wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`)?.addEventListener("change", async (e) => {
-    try{
-      savePrefs();
-      const user = adminName();
-      const ack = !!e.target.checked;
+  // ACK toggle
+  wrap
+    .querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`)
+    ?.addEventListener("change", async (e) => {
+      try {
+        savePrefs();
+        const user = adminName();
+        const ack = !!e.target.checked;
 
-      await apiPost({
-        action: "updateIssue",
-        issueId: iss.issueId,
-        changes: { acknowledged: ack },
-        user
-      });
+        await apiPost({
+          action: "updateIssue",
+          issueId: iss.issueId,
+          changes: { acknowledged: ack },
+          user,
+        });
 
-      toast(ack ? "Acknowledged" : "Un-acknowledged");
-      await refreshIssues();
-    }catch(err){
-      toast(err.message, 3200);
-    }
-  });
+        toast(ack ? "Acknowledged" : "Un-acknowledged");
+        await refreshIssues();
+      } catch (err) {
+        toast(err.message, 3200);
+      }
+    });
 
-  wrap.querySelector(`button[data-apply="${CSS.escape(iss.issueId)}"]`)?.addEventListener("click", async () => {
-    try{
-      savePrefs();
-      const user = adminName();
-      const status = wrap.querySelector(`select[data-issue="${CSS.escape(iss.issueId)}"]`).value;
-      const ack = !!wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`).checked;
+  // Apply status
+  wrap
+    .querySelector(`button[data-apply="${CSS.escape(iss.issueId)}"]`)
+    ?.addEventListener("click", async () => {
+      try {
+        savePrefs();
+        const user = adminName();
+        const status = wrap.querySelector(`select[data-issue="${CSS.escape(iss.issueId)}"]`).value;
+        const ack = !!wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`).checked;
 
-      await apiPost({
-        action: "updateIssue",
-        issueId: iss.issueId,
-        changes: { status, acknowledged: ack },
-        user
-      });
+        await apiPost({
+          action: "updateIssue",
+          issueId: iss.issueId,
+          changes: { status, acknowledged: ack },
+          user,
+        });
 
-      toast(status === "RESOLVED" ? "Issue resolved" : "Issue updated");
-      await refreshIssues();
-    }catch(err){
-      toast(err.message, 3200);
-    }
-  });
+        toast(status === "RESOLVED" ? "Issue resolved" : "Issue updated");
+        await refreshIssues();
+      } catch (err) {
+        toast(err.message, 3200);
+      }
+    });
 
   return wrap;
 }
 
 function renderIssues(issues) {
   const box = $("#issuesBox");
+  if (!box) return;
+
   box.innerHTML = "";
 
-  const active = (issues || []).filter(x => String(x.status || "").toUpperCase() !== "RESOLVED");
+  const active = (issues || []).filter((x) => String(x.status || "").toUpperCase() !== "RESOLVED");
   if (!active.length) {
     box.innerHTML = `<div class="note">No active issues.</div>`;
     return;
@@ -350,8 +335,9 @@ function renderIssues(issues) {
   const grouped = groupByApparatus_(active);
 
   for (const [apparatusId, unitIssuesRaw] of grouped) {
-    const unitIssues = [...unitIssuesRaw].sort((a,b) => {
-      const aAck = !!a.acknowledged, bAck = !!b.acknowledged;
+    const unitIssues = [...unitIssuesRaw].sort((a, b) => {
+      const aAck = !!a.acknowledged,
+        bAck = !!b.acknowledged;
       if (aAck !== bAck) return aAck ? 1 : -1;
 
       const aSt = computedIssueStatus_(a);
@@ -368,7 +354,7 @@ function renderIssues(issues) {
 
     const details = document.createElement("details");
     details.className = "unit-group";
-    details.open = (sum.newCt + sum.oldCt) > 0;
+    details.open = sum.newCt + sum.oldCt > 0;
 
     details.innerHTML = `
       <summary class="unit-summary">
@@ -391,43 +377,23 @@ function renderIssues(issues) {
   }
 }
 
-function escapeHtml(s) {
-  return String(s || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 /* ---------- Filtered Issues Title ---------- */
 function stationLabel_(id) {
   if (id === "all") return "Overall (All Stations)";
   return `Station ${id}`;
 }
+
 function setIssuesTitle_() {
   const f = selectedStationFilter();
   const el = $("#issuesTitle");
   if (!el) return;
-  el.textContent = (f === "all") ? "Active Issues (All Stations)" : `Active Issues (${stationLabel_(f)})`;
+  el.textContent = f === "all" ? "Active Issues (All Stations)" : `Active Issues (${stationLabel_(f)})`;
 }
 
 /* ---------- Refresh ---------- */
-let LAST_ADMIN_STATUS = null;
-
-async function refreshStatusAndConfig() {
-  const s = await apiGet({ action: "getAdminStatus" });
-  LAST_ADMIN_STATUS = s.status;
-
-  renderStatus(s.status);
-
-  const cfg = s.status.weeklyConfig || (await apiGet({ action: "getWeeklyConfig" })).weeklyConfig;
-  renderWeeklyConfig(cfg);
-}
-
 function apparatusSetForStation_(stationId) {
   const set = new Set();
-  const rows = (LAST_ADMIN_STATUS?.rows || []);
+  const rows = LAST_ADMIN_STATUS?.rows || [];
   for (const r of rows) {
     if (String(r.stationId) === String(stationId)) set.add(String(r.apparatusId || "").trim());
   }
@@ -435,7 +401,11 @@ function apparatusSetForStation_(stationId) {
 }
 
 async function fetchIssuesForStation_(stationId) {
-  const res = await apiGet({ action: "listIssues", stationId: String(stationId), includeCleared: "false" });
+  const res = await apiGet({
+    action: "listIssues",
+    stationId: String(stationId),
+    includeCleared: "false",
+  });
   return res.issues || [];
 }
 
@@ -444,7 +414,7 @@ function dedupeIssuesById_(issues) {
   for (const iss of issues || []) {
     const id = iss?.issueId || "";
     if (!id) continue;
-    // Keep the most recently updated version if duplicates appear
+
     const prev = map.get(id);
     if (!prev) {
       map.set(id, iss);
@@ -459,32 +429,35 @@ function dedupeIssuesById_(issues) {
 
 async function refreshIssues() {
   const f = selectedStationFilter();
-
   let issues = [];
 
   if (f === "all") {
-    // ✅ KEY FIX: pull each station and merge
     const results = await Promise.all(
-      STATIONS.map(st => fetchIssuesForStation_(st).catch(() => []))
+      STATIONS.map((st) => fetchIssuesForStation_(st).catch(() => []))
     );
     issues = dedupeIssuesById_(results.flat());
   } else {
     issues = await fetchIssuesForStation_(f);
   }
 
-  // If backend returns issues without station info, we still can filter by
-  // allowed apparatus list from status rows (extra safety)
+  // Extra safety filter if station view is selected
   if (f !== "all") {
     const allowedUnits = apparatusSetForStation_(f);
-    issues = issues.filter(iss => allowedUnits.has(String(iss.apparatusId || "").trim()));
+    issues = issues.filter((iss) => allowedUnits.has(String(iss.apparatusId || "").trim()));
   }
 
   setIssuesTitle_();
   renderIssues(issues);
 }
 
+async function refreshStatus() {
+  const s = await apiGet({ action: "getAdminStatus" });
+  LAST_ADMIN_STATUS = s.status || null;
+  renderStatus(LAST_ADMIN_STATUS || { rows: [] });
+}
+
 async function refreshAll() {
-  await refreshStatusAndConfig();
+  await refreshStatus();
   await refreshIssues();
 }
 
@@ -504,17 +477,17 @@ async function boot() {
   });
 
   $("#adminStationFilter")?.addEventListener("change", async () => {
-    try{
+    try {
       savePrefs();
       setIssuesTitle_();
 
-      // Status can re-render immediately from cached status (if available)
-      renderStatus(LAST_ADMIN_STATUS || { rows: [] });
+      // re-render status from cache (or fetch if not yet)
+      if (LAST_ADMIN_STATUS) renderStatus(LAST_ADMIN_STATUS);
+      else await refreshStatus();
 
-      // Issues must re-fetch for "all" (multi-station)
       await refreshIssues();
       toast("Filter applied");
-    }catch(err){
+    } catch (err) {
       toast(err.message, 3200);
     }
   });
