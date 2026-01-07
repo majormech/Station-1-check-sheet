@@ -1,199 +1,378 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>DFD — Configuration</title>
-  <style>
-    :root{
-      --brand:#c41212; --brandInk:#fff;
-      --bg:#f6f7f9; --card:#fff; --line:#e6e6e6;
-      --ink:#111; --muted:#667085;
-      --ok:#16a34a; --warn:#f59e0b; --bad:#dc2626;
+/* DFD Configuration UI (Cloudflare Pages)
+   Matches configuration.html you posted.
+
+   Uses existing GAS actions:
+     GET  /api?action=getAdminStatus
+     POST /api  {action:"setWeeklyDay", checkKey, weekday, user}
+
+   Optional GAS actions (recommended for email separations):
+     GET  /api?action=getEmailRecipients
+     POST /api  {action:"setEmailRecipients", user, emails }
+
+   Email schema supported by this UI:
+     emails = {
+       daily:   [ ... ],
+       weekly:  [ ... ],
+       issues:  [ ... ],
+       alerts:  [ ... ]
+     }
+
+   Backward compatible: if your backend only has
+     { issues: [...], drugExp: [...] }
+   we map:
+     issues  <- issues
+     alerts  <- drugExp
+*/
+
+const $ = (s) => document.querySelector(s);
+const WEEKDAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+let EMAILS = {
+  daily: [],
+  weekly: [],
+  issues: [],
+  alerts: []
+};
+
+function toast(msg, ms = 2200) {
+  const t = $("#toast");
+  const txt = $("#toastText");
+  if (!t || !txt) return;
+  txt.textContent = msg || "OK";
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), ms);
+}
+
+function escapeHtml(s) {
+  return String(s || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function normalizeEmails(text) {
+  // accept commas OR newlines
+  return String(text || "")
+    .split(/[\n,]/g)
+    .map(x => x.trim())
+    .filter(Boolean);
+}
+
+function joinEmails(list) {
+  return (list || []).join("\n");
+}
+
+function setPill(id, text) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = text || "—";
+}
+
+function adminName() {
+  // Configuration page does not currently have an Admin Name input.
+  // If you add one later, wire it here. For now, use a stable default.
+  return "Configuration UI";
+}
+
+/* ---------------- API ---------------- */
+async function apiGet(params) {
+  const qs = new URLSearchParams(params);
+  const res = await fetch(`/api?${qs.toString()}`, { method: "GET" });
+  const text = await res.text();
+  let json;
+  try { json = JSON.parse(text); }
+  catch { throw new Error(`Bad JSON from /api: ${text.slice(0,160)}`); }
+  if (!json.ok) throw new Error(json.error || "Request failed");
+  return json;
+}
+
+async function apiPost(body) {
+  const res = await fetch(`/api`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const text = await res.text();
+  let json;
+  try { json = JSON.parse(text); }
+  catch { throw new Error(`Bad JSON from /api: ${text.slice(0,160)}`); }
+  if (!json.ok) throw new Error(json.error || "Request failed");
+  return json;
+}
+
+// Soft GET: return null when GAS says "Unknown action"
+async function apiGetSoft(params) {
+  try {
+    return await apiGet(params);
+  } catch (e) {
+    const msg = String(e?.message || "").toLowerCase();
+    if (msg.includes("unknown action")) return null;
+    throw e;
+  }
+}
+
+/* ---------------- UI toggles ---------------- */
+function showMode(mode) {
+  const schedWrap = $("#scheduleTargetWrap");
+  const emailWrap = $("#emailTargetWrap");
+  const panelSchedule = $("#panelSchedule");
+  const panelEmails = $("#panelEmails");
+
+  if (mode === "schedule") {
+    if (schedWrap) schedWrap.style.display = "";
+    if (emailWrap) emailWrap.style.display = "none";
+    if (panelSchedule) panelSchedule.style.display = "";
+    if (panelEmails) panelEmails.style.display = "none";
+  } else {
+    if (schedWrap) schedWrap.style.display = "none";
+    if (emailWrap) emailWrap.style.display = "";
+    if (panelSchedule) panelSchedule.style.display = "none";
+    if (panelEmails) panelEmails.style.display = "";
+  }
+}
+
+/* ---------------- Weekly schedule ---------------- */
+async function loadWeeklySchedule() {
+  setPill("#schedStatus", "Loading…");
+
+  // Preferred: weeklyConfig lives on getAdminStatus (you already have this)
+  const admin = await apiGet({ action: "getAdminStatus" });
+  const cfg = admin?.status?.weeklyConfig || null;
+
+  if (!cfg) {
+    setPill("#schedStatus", "No weekly config found");
+    toast("Backend did not return weeklyConfig", 3200);
+    return;
+  }
+
+  const key = ($("#scheduleTarget")?.value || "pumpWeekly").trim();
+  const currentName = cfg[key] || "Saturday";
+
+  // set select (0-6) based on current weekday string
+  const idx = WEEKDAYS.findIndex(d => d === currentName);
+  if ($("#weeklyDay")) $("#weeklyDay").value = String(idx >= 0 ? idx : 6);
+
+  setPill("#schedStatus", `Current: ${currentName}`);
+}
+
+async function saveWeeklySchedule() {
+  const checkKey = ($("#scheduleTarget")?.value || "").trim();
+  if (!checkKey) throw new Error("Select a weekly item.");
+
+  const dayIdx = Number($("#weeklyDay")?.value ?? 6);
+  const weekday = WEEKDAYS[Number.isFinite(dayIdx) ? dayIdx : 6];
+
+  // Notes exist in UI but are optional; we do not send to GAS unless you add support
+  // const notes = ($("#schedNotes")?.value || "").trim();
+
+  await apiPost({
+    action: "setWeeklyDay",
+    checkKey,
+    weekday,
+    user: adminName()
+  });
+
+  toast(`Saved: ${checkKey} = ${weekday}`);
+  await loadWeeklySchedule();
+}
+
+/* ---------------- Emails (separated groups) ---------------- */
+function ensureEmailSchema_(emailsObj) {
+  // New schema: {daily, weekly, issues, alerts}
+  // Old schema: {issues, drugExp}
+  const out = { daily: [], weekly: [], issues: [], alerts: [] };
+
+  if (!emailsObj || typeof emailsObj !== "object") return out;
+
+  // New keys
+  if (Array.isArray(emailsObj.daily)) out.daily = emailsObj.daily;
+  if (Array.isArray(emailsObj.weekly)) out.weekly = emailsObj.weekly;
+  if (Array.isArray(emailsObj.issues)) out.issues = emailsObj.issues;
+  if (Array.isArray(emailsObj.alerts)) out.alerts = emailsObj.alerts;
+
+  // Back-compat keys
+  if (Array.isArray(emailsObj.drugExp) && !out.alerts.length) out.alerts = emailsObj.drugExp;
+  if (Array.isArray(emailsObj.drugEmails) && !out.alerts.length) out.alerts = emailsObj.drugEmails;
+
+  // Also accept issuesEmails naming
+  if (Array.isArray(emailsObj.issuesEmails) && !out.issues.length) out.issues = emailsObj.issuesEmails;
+
+  // De-dupe + normalize
+  for (const k of Object.keys(out)) {
+    out[k] = Array.from(new Set((out[k] || []).map(x => String(x || "").trim()).filter(Boolean)));
+  }
+  return out;
+}
+
+function currentEmailTarget() {
+  return ($("#emailTarget")?.value || "issues").trim();
+}
+
+function renderEmailEditorForTarget() {
+  const target = currentEmailTarget();
+  const box = $("#emailList");
+
+  if (!box) return;
+
+  if (target === "all") {
+    // Show combined view (readable)
+    const combined = [
+      `# Daily Checks`,
+      ...EMAILS.daily,
+      ``,
+      `# Weekly Checks`,
+      ...EMAILS.weekly,
+      ``,
+      `# Issues / Out-of-Service / Problems`,
+      ...EMAILS.issues,
+      ``,
+      `# Drug Expiration Alerts`,
+      ...EMAILS.alerts
+    ].join("\n");
+    box.value = combined.trim() + "\n";
+    setPill("#emailStatus", "Viewing: ALL (combined)");
+    return;
+  }
+
+  box.value = joinEmails(EMAILS[target] || []);
+  setPill("#emailStatus", `Viewing: ${target}`);
+}
+
+async function loadEmails() {
+  setPill("#emailStatus", "Loading…");
+
+  // Preferred dedicated endpoint
+  const res = await apiGetSoft({ action: "getEmailRecipients" });
+
+  if (!res) {
+    // fallback attempt: maybe embedded in admin status
+    const admin = await apiGet({ action: "getAdminStatus" });
+    const embedded = admin?.status?.emails || admin?.status?.emailRecipients || null;
+
+    if (!embedded) {
+      EMAILS = { daily: [], weekly: [], issues: [], alerts: [] };
+      renderEmailEditorForTarget();
+      setPill("#emailStatus", "Email actions not installed");
+      toast("Missing GAS action: getEmailRecipients (add it to Code.gs)", 3600);
+      return;
     }
-    *{box-sizing:border-box}
-    html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial}
-    header{
-      position:sticky;top:0;z-index:10;
-      background:var(--brand);color:var(--brandInk);
-      padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.15);
+
+    EMAILS = ensureEmailSchema_(embedded);
+    renderEmailEditorForTarget();
+    setPill("#emailStatus", "Loaded (from getAdminStatus)");
+    return;
+  }
+
+  EMAILS = ensureEmailSchema_(res.emails || res.recipients || null);
+  renderEmailEditorForTarget();
+  setPill("#emailStatus", "Loaded");
+}
+
+async function saveEmails() {
+  const target = currentEmailTarget();
+  const text = $("#emailList")?.value || "";
+
+  if (target === "all") {
+    // "All" is a combined display; we won't try to parse headers.
+    // Safer: require editing groups individually.
+    throw new Error("Edit & save one group at a time (Daily/Weekly/Issues/Alerts).");
+  }
+
+  const list = normalizeEmails(text);
+  EMAILS[target] = Array.from(new Set(list));
+
+  // Requires GAS action
+  const res = await apiPost({
+    action: "setEmailRecipients",
+    user: adminName(),
+    emails: EMAILS
+  });
+
+  toast("Recipients saved");
+  // re-load from server if it returned anything
+  if (res?.emails) EMAILS = ensureEmailSchema_(res.emails);
+  renderEmailEditorForTarget();
+}
+
+async function clearEmailsForGroup() {
+  const target = currentEmailTarget();
+  if (target === "all") throw new Error("Pick a specific group to clear.");
+  EMAILS[target] = [];
+
+  await apiPost({
+    action: "setEmailRecipients",
+    user: adminName(),
+    emails: EMAILS
+  });
+
+  toast("Group cleared");
+  renderEmailEditorForTarget();
+}
+
+/* ---------------- Reload routing ---------------- */
+async function reloadCurrent() {
+  const mode = ($("#configType")?.value || "schedule").trim();
+  showMode(mode);
+
+  if (mode === "schedule") {
+    await loadWeeklySchedule();
+  } else {
+    await loadEmails();
+  }
+}
+
+/* ---------------- Boot ---------------- */
+async function boot() {
+  // initial mode
+  showMode(($("#configType")?.value || "schedule").trim());
+
+  $("#configType")?.addEventListener("change", async () => {
+    try { await reloadCurrent(); }
+    catch (e) { toast(e.message, 3200); }
+  });
+
+  $("#scheduleTarget")?.addEventListener("change", async () => {
+    try { await loadWeeklySchedule(); }
+    catch (e) { toast(e.message, 3200); }
+  });
+
+  $("#emailTarget")?.addEventListener("change", () => {
+    try { renderEmailEditorForTarget(); }
+    catch (e) { toast(e.message, 3200); }
+  });
+
+  $("#btnReload")?.addEventListener("click", async () => {
+    try {
+      await reloadCurrent();
+      toast("Reloaded");
+    } catch (e) {
+      toast(e.message, 3200);
     }
-    .wrap{max-width:1100px;margin:0 auto;padding:0 14px 60px}
-    h1{margin:0;font-size:16px}
-    .sub{margin:0;opacity:.9;font-size:12px}
+  });
 
-    .btn{
-      height:36px;padding:0 12px;border-radius:10px;
-      border:1px solid rgba(0,0,0,.12);background:#fff;color:#111;
-      font-weight:900;cursor:pointer;
-      display:inline-flex;align-items:center;gap:8px;
-    }
-    .btn.primary{background:#111;color:#fff;border-color:#111}
-    .btn.danger{background:#dc2626;color:#fff;border-color:#dc2626}
-    .btn:active{transform:translateY(1px)}
-    .btn[disabled]{opacity:.55;cursor:not-allowed}
+  $("#btnSaveSchedule")?.addEventListener("click", async () => {
+    try { await saveWeeklySchedule(); }
+    catch (e) { toast(e.message, 3200); }
+  });
 
-    .card{
-      background:var(--card);
-      border:1px solid var(--line);
-      border-radius:14px;
-      padding:12px;
-      box-shadow:0 10px 22px rgba(0,0,0,.04);
-      margin-top:12px;
-    }
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
-    label{font-size:12px;color:var(--muted);font-weight:900}
-    select,input,textarea{
-      border-radius:10px;border:1px solid var(--line);
-      padding:8px 10px;background:#fff;font-weight:700;
-    }
-    select,input{height:36px;min-width:200px}
-    textarea{min-height:90px;resize:vertical;width:100%}
-    .note{color:var(--muted);font-size:12px}
-    .hr{height:1px;background:var(--line);margin:12px 0}
-    .pill{
-      display:inline-flex;align-items:center;
-      padding:3px 8px;border-radius:999px;
-      border:1px solid var(--line);
-      font-size:12px;font-weight:900;background:#fff;
-    }
+  $("#btnSaveEmails")?.addEventListener("click", async () => {
+    try { await saveEmails(); }
+    catch (e) { toast(e.message, 3200); }
+  });
 
-    /* Toast */
-    #toast{
-      position:fixed;left:50%;bottom:16px;transform:translateX(-50%);
-      background:#111;color:#fff;border-radius:999px;padding:10px 14px;
-      font-weight:900;font-size:13px;box-shadow:0 10px 25px rgba(0,0,0,.25);
-      opacity:0;pointer-events:none;transition:.18s;z-index:9999;
-    }
-    #toast.show{opacity:1}
-  </style>
-</head>
-<body>
-  <header>
-    <div class="wrap">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-        <div>
-          <h1>DFD — Configuration</h1>
-          <p class="sub">Weekly schedules + email recipients (separated lists).</p>
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <a class="btn" href="./administration.html" style="text-decoration:none">Administration</a>
-          <a class="btn" href="./search.html" style="text-decoration:none">Search & Print</a>
-        </div>
-      </div>
-    </div>
-  </header>
+  $("#btnClearEmails")?.addEventListener("click", async () => {
+    try { await clearEmailsForGroup(); }
+    catch (e) { toast(e.message, 3200); }
+  });
 
-  <main class="wrap">
-    <section class="card">
-      <div class="row">
-        <div>
-          <label for="configType">What are you configuring?</label><br/>
-          <select id="configType">
-            <option value="schedule">Weekly Schedule</option>
-            <option value="emails">Email Recipients</option>
-          </select>
-        </div>
+  try {
+    await reloadCurrent();
+    toast("Loaded");
+  } catch (e) {
+    toast(e.message, 3200);
+  }
+}
 
-        <div id="scheduleTargetWrap">
-          <label for="scheduleTarget">Weekly item</label><br/>
-          <select id="scheduleTarget">
-            <option value="pumpWeekly">Pump Weekly</option>
-            <option value="aerialWeekly">Aerial Weekly</option>
-            <option value="scbaWeekly">SCBA Weekly</option>
-            <option value="sawWeekly">Saws Weekly</option>
-            <option value="batteriesWeekly">Batteries Weekly</option>
-          </select>
-        </div>
-
-        <div id="emailTargetWrap" style="display:none">
-          <label for="emailTarget">Recipient group</label><br/>
-          <select id="emailTarget">
-            <!-- “Email separations” re-added here as separate groups -->
-            <option value="daily">Daily Checks</option>
-            <option value="weekly">Weekly Checks</option>
-            <option value="issues">Issues / Out-of-Service / Problems</option>
-            <option value="alerts">Drug Expiration Alerts</option>
-            <option value="all">All Emails</option>
-          </select>
-        </div>
-
-        <button class="btn" id="btnReload">Reload</button>
-      </div>
-
-      <div class="note" style="margin-top:10px">
-        Use the dropdowns to choose a target, edit values, then Save.
-      </div>
-    </section>
-
-    <!-- Weekly schedule editor -->
-    <section class="card" id="panelSchedule">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-        <div>
-          <div style="font-weight:900">Weekly Schedule</div>
-          <div class="note">Choose which day of week the selected weekly check is due.</div>
-        </div>
-        <div class="pill" id="schedStatus">—</div>
-      </div>
-
-      <div class="hr"></div>
-
-      <div class="row">
-        <div>
-          <label for="weeklyDay">Due Day</label><br/>
-          <select id="weeklyDay">
-            <option value="0">Sunday</option>
-            <option value="1">Monday</option>
-            <option value="2">Tuesday</option>
-            <option value="3">Wednesday</option>
-            <option value="4">Thursday</option>
-            <option value="5">Friday</option>
-            <option value="6" selected>Saturday</option>
-          </select>
-        </div>
-
-        <div style="flex:1 1 280px">
-          <label for="schedNotes">Notes (optional)</label><br/>
-          <input id="schedNotes" type="text" placeholder="Example: Pump tests moved to Monday starting Feb 2026" style="width:100%;min-width:280px"/>
-        </div>
-
-        <button class="btn primary" id="btnSaveSchedule">Save Schedule</button>
-      </div>
-
-      <div class="note" style="margin-top:10px">
-        This updates the configuration used by Administration status logic (what day counts as “this week’s” completion).
-      </div>
-    </section>
-
-    <!-- Email recipients editor -->
-    <section class="card" id="panelEmails" style="display:none">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-        <div>
-          <div style="font-weight:900">Email Recipients</div>
-          <div class="note">Separate lists by group. Commas or new lines are accepted.</div>
-        </div>
-        <div class="pill" id="emailStatus">—</div>
-      </div>
-
-      <div class="hr"></div>
-
-      <label for="emailList">Recipients</label>
-      <textarea id="emailList" placeholder="example@city.gov&#10;captain@city.gov&#10;battalion@city.gov"></textarea>
-
-      <div class="row" style="margin-top:10px">
-        <button class="btn primary" id="btnSaveEmails">Save Recipients</button>
-        <button class="btn danger" id="btnClearEmails">Clear This Group</button>
-      </div>
-
-      <div class="note" style="margin-top:10px">
-        Tip: This keeps “separations” by group so you can route different email types to different people.
-      </div>
-    </section>
-
-  </main>
-
-  <div id="toast" aria-live="polite" aria-atomic="true"><span id="toastText">Saved</span></div>
-
-  <script src="./configuration.js"></script>
-</body>
-</html>
+document.addEventListener("DOMContentLoaded", boot);
