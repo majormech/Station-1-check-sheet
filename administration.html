@@ -198,44 +198,6 @@
       font-size:11px;
     }
 
-    /* Weekly config rows reuse .issue layout */
-    .issue{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-      padding:10px;
-      border:1px solid var(--line);
-      border-radius:12px;
-      background:#fff;
-      margin-top:10px;
-    }
-    .issue h3{
-      margin:0;
-      font-size:13px;
-      letter-spacing:.2px;
-    }
-    .meta{
-      color:var(--muted);
-      font-size:12px;
-      margin-top:4px;
-    }
-    .right{
-      display:flex;
-      gap:10px;
-      align-items:center;
-      flex-wrap:wrap;
-      justify-content:flex-end;
-    }
-    select{
-      height:34px;
-      border-radius:10px;
-      border:1px solid var(--line);
-      padding:0 10px;
-      background:#fff;
-      font-weight:700;
-    }
-
     /* Issues highlighting */
     .hl-new{ background: var(--hl-new); }
     .hl-old{ background: var(--hl-old); }
@@ -311,34 +273,6 @@
     }
     .unit-body{ padding:10px; display:grid; gap:10px; }
 
-    /* Email section */
-    .emailGrid{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap:12px;
-      margin-top:10px;
-    }
-    @media (max-width: 980px){
-      .emailGrid{ grid-template-columns:1fr; }
-    }
-    .emailBox{
-      border:1px solid var(--line);
-      border-radius:14px;
-      background:#fff;
-      padding:12px;
-      display:grid;
-      gap:8px;
-    }
-    textarea{
-      width:100%;
-      min-height:120px;
-      border-radius:12px;
-      border:1px solid var(--line);
-      padding:10px;
-      font:inherit;
-      resize:vertical;
-    }
-
     /* Toast */
     #toast{
       position:fixed;
@@ -394,7 +328,7 @@
           <div class="badgeBrand"></div>
           <div>
             <h1>DFD — Administration</h1>
-            <p class="subhead">Status dashboard • Weekly config • Issues • Email Recipients</p>
+            <p class="subhead">Status dashboard • Issues</p>
           </div>
         </div>
 
@@ -418,9 +352,14 @@
             <input id="adminName" placeholder="Your name (required)" />
           </div>
 
-          <!-- Search & Print (YES, this format is correct) -->
+          <!-- Search & Print -->
           <a class="btn" href="./search.html" style="text-decoration:none;display:inline-flex;align-items:center">
             Search & Print
+          </a>
+
+          <!-- NEW: Configuration -->
+          <a class="btn" href="./configuration.html" style="text-decoration:none;display:inline-flex;align-items:center">
+            Configuration
           </a>
 
           <button class="btn" id="btnRefresh">Refresh</button>
@@ -457,35 +396,14 @@
         </div>
       </section>
 
-      <!-- Weekly config -->
+      <!-- Removed: Weekly Schedule Configuration card -->
       <section class="card">
-        <h2>Weekly Schedule Configuration</h2>
-        <div class="note">Change which weekday counts for each weekly check. This applies department-wide.</div>
-        <div id="weeklyConfigBox"></div>
+        <h2>Notes</h2>
+        <div class="note">
+          Configuration (weekly schedules + email recipients) has moved to the Configuration page.
+        </div>
       </section>
     </div>
-
-    <!-- Email Recipients -->
-    <section class="card" style="margin-top:12px">
-      <h2>Email Recipients</h2>
-      <div class="note">One email per line. Used for Issues + Drug Expiration alerts.</div>
-
-      <div class="emailGrid">
-        <div class="emailBox">
-          <h2 style="margin:0;font-size:14px">Issues Email List</h2>
-          <div class="note">Receives issue emails (based on your backend rules).</div>
-          <textarea id="issuesEmails" placeholder="one@email.com&#10;two@email.com"></textarea>
-          <button class="btn" id="btnSaveIssuesEmails">Save Issues Emails</button>
-        </div>
-
-        <div class="emailBox">
-          <h2 style="margin:0;font-size:14px">Drug Expiration Email List</h2>
-          <div class="note">Receives medication expiration emails.</div>
-          <textarea id="drugEmails" placeholder="one@email.com&#10;two@email.com"></textarea>
-          <button class="btn" id="btnSaveDrugEmails">Save Drug Emails</button>
-        </div>
-      </div>
-    </section>
 
     <!-- Issues -->
     <section class="card" style="margin-top:12px">
