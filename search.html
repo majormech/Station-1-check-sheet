@@ -139,8 +139,9 @@
         </div>
 
         <div>
-          <label for="category">Category</label><br/>
+          <label for="category">Category (optional)</label><br/>
           <select id="category">
+            <option value="all" selected>All Categories</option>
             <option value="apparatusDaily">Apparatus Daily</option>
             <option value="medicalDaily">Medical Daily</option>
             <option value="scbaWeekly">SCBA Weekly</option>
@@ -167,7 +168,7 @@
 
         <div style="flex:1 1 220px">
           <label for="q">Keyword</label><br/>
-          <input id="q" type="text" placeholder="mileage, knox, radio, PSI, submitter, notes…" />
+          <input id="q" type="text" placeholder="mileage, engine hours, knox, radio, PSI, submitter, notes…" />
         </div>
 
         <div>
@@ -184,7 +185,7 @@
       </div>
 
       <div class="note" style="margin-top:10px">
-        Tip: searches scan the full row contents, so “Knox”, “radios”, “4500”, “engine hours”, names, etc. will match.
+        Tip: searches scan the full row contents, so “Knox”, “radios”, “4500”, “engine hours”, names, notes, etc. will match.
       </div>
     </section>
 
