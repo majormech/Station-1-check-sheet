@@ -16,7 +16,27 @@
 */
 
 const $ = (s) => document.querySelector(s);
-const STATIONS = ["1","2","3","4","5","6","7"];
+const STATIONS = ["1","2","3","4","5","6","7","8","9","10"];
+
+const TRAILER_UNITS = new Set(["HAZMAT","TRT"]);
+const BOAT_UNITS = new Set(["ZODIAC","DIVE BOAT"]);
+const EXTRICATION_UNITS = new Set(["E-1","E-4"]);
+
+function normalizeUnitId(id) {
+  return String(id || "").trim().toUpperCase();
+}
+
+function isTrailerUnit(id) {
+  return TRAILER_UNITS.has(normalizeUnitId(id));
+}
+
+function isBoatUnit(id) {
+  return BOAT_UNITS.has(normalizeUnitId(id));
+}
+
+function isMabasUnit(id) {
+  return normalizeUnitId(id) === "MABAS 43 DECON";
+}
 
 function toast(msg, ms = 2200) {
   const t = $("#toast");
@@ -94,32 +114,42 @@ async function apiPost(body) {
   - T-1/T-2/T-3: DO have pumps, so YES Pump Weekly
 */
 function requirementsFor(apparatusIdRaw) {
-  const id = String(apparatusIdRaw || "").toUpperCase().trim();
+  const id = normalizeUnitId(apparatusIdRaw);
+  const isEngine = /^E-\d+$/i.test(id);
+  const isTruck = /^T-\d+$/i.test(id);
+  const isRescue = id === "R-1";
+  const isBattalion = id === "B-1";
+  const isSpecialWeekly = isMabasUnit(id) || isTrailerUnit(id) || isBoatUnit(id);
 
   const req = {
     apparatusDaily: true,
     medicalDaily: true,
     scbaWeekly: true,
-    pumpWeekly: true,
-    aerialWeekly: true,
-    sawWeekly: true,
-    batteriesWeekly: true,
+    pumpWeekly: false,
+    aerialWeekly: false,
+    sawWeekly: false,
+    batteriesWeekly: false,
+    weeklyCheck: false,
   };
 
-  if (id === "E-1") {
-    req.sawWeekly = false;
-    req.aerialWeekly = false;
-  }
-
-  if (id === "R-1") {
+  if (isSpecialWeekly) {
+    req.apparatusDaily = false;
+    req.medicalDaily = false;
+    req.scbaWeekly = false;
     req.pumpWeekly = false;
     req.aerialWeekly = false;
-    req.medicalDaily = false;
+    req.sawWeekly = false;
+    req.batteriesWeekly = false;
+    req.weeklyCheck = true;
+    return req;
   }
 
-  if (/^T-\d+$/i.test(id)) {
-    req.pumpWeekly = true;
-  }
+  if (isEngine || isTruck) req.pumpWeekly = true;
+  if (isTruck || id === "E-5") req.aerialWeekly = true;
+  if (isTruck) req.sawWeekly = true;
+  if (EXTRICATION_UNITS.has(id)) req.batteriesWeekly = true;
+
+  if (isRescue || isBattalion || isMabasUnit(id)) req.medicalDaily = false;
 
   return req;
 }
@@ -162,7 +192,7 @@ function renderStatus(status) {
   }
 
   if (!rows.length) {
-    tb.innerHTML = `<tr><td colspan="9" class="note">No apparatus for this view.</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="10" class="note">No apparatus for this view.</td></tr>`;
     return;
   }
 
@@ -186,6 +216,7 @@ function renderStatus(status) {
       <td data-label="Aerial Weekly">${cell(req.aerialWeekly, c.aerialWeekly)}</td>
       <td data-label="Saws Weekly">${cell(req.sawWeekly, c.sawWeekly)}</td>
       <td data-label="Batteries Weekly">${cell(req.batteriesWeekly, c.batteriesWeekly)}</td>
+      <td data-label="Weekly Check">${cell(req.weeklyCheck, c.weeklyCheck)}</td>
     `;
     tb.appendChild(tr);
   }
