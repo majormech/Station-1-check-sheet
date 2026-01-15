@@ -1,378 +1,360 @@
-/* DFD Configuration UI (Cloudflare Pages)
-   Matches configuration.html you posted.
-
-   Uses existing GAS actions:
-     GET  /api?action=getAdminStatus
-     POST /api  {action:"setWeeklyDay", checkKey, weekday, user}
-
-   Optional GAS actions (recommended for email separations):
-     GET  /api?action=getEmailRecipients
-     POST /api  {action:"setEmailRecipients", user, emails }
-
-   Email schema supported by this UI:
-     emails = {
-       daily:   [ ... ],
-       weekly:  [ ... ],
-       issues:  [ ... ],
-       alerts:  [ ... ]
-     }
-
-   Backward compatible: if your backend only has
-     { issues: [...], drugExp: [...] }
-   we map:
-     issues  <- issues
-     alerts  <- drugExp
-*/
-
-const $ = (s) => document.querySelector(s);
-const WEEKDAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-
-let EMAILS = {
-  daily: [],
-  weekly: [],
-  issues: [],
-  alerts: []
-};
-
-function toast(msg, ms = 2200) {
-  const t = $("#toast");
-  const txt = $("#toastText");
-  if (!t || !txt) return;
-  txt.textContent = msg || "OK";
-  t.classList.add("show");
-  setTimeout(() => t.classList.remove("show"), ms);
-}
-
-function escapeHtml(s) {
-  return String(s || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function normalizeEmails(text) {
-  // accept commas OR newlines
-  return String(text || "")
-    .split(/[\n,]/g)
-    .map(x => x.trim())
-    .filter(Boolean);
-}
-
-function joinEmails(list) {
-  return (list || []).join("\n");
-}
-
-function setPill(id, text) {
-  const el = $(id);
-  if (!el) return;
-  el.textContent = text || "—";
-}
-
-function adminName() {
-  // Configuration page does not currently have an Admin Name input.
-  // If you add one later, wire it here. For now, use a stable default.
-  return "Configuration UI";
-}
-
-/* ---------------- API ---------------- */
-async function apiGet(params) {
-  const qs = new URLSearchParams(params);
-  const res = await fetch(`/api?${qs.toString()}`, { method: "GET" });
-  const text = await res.text();
-  let json;
-  try { json = JSON.parse(text); }
-  catch { throw new Error(`Bad JSON from /api: ${text.slice(0,160)}`); }
-  if (!json.ok) throw new Error(json.error || "Request failed");
-  return json;
-}
-
-async function apiPost(body) {
-  const res = await fetch(`/api`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Accept": "application/json" },
-    body: JSON.stringify(body)
-  });
-  const text = await res.text();
-  let json;
-  try { json = JSON.parse(text); }
-  catch { throw new Error(`Bad JSON from /api: ${text.slice(0,160)}`); }
-  if (!json.ok) throw new Error(json.error || "Request failed");
-  return json;
-}
-
-// Soft GET: return null when GAS says "Unknown action"
-async function apiGetSoft(params) {
-  try {
-    return await apiGet(params);
-  } catch (e) {
-    const msg = String(e?.message || "").toLowerCase();
-    if (msg.includes("unknown action")) return null;
-    throw e;
-  }
-}
-
-/* ---------------- UI toggles ---------------- */
-function showMode(mode) {
-  const schedWrap = $("#scheduleTargetWrap");
-  const emailWrap = $("#emailTargetWrap");
-  const panelSchedule = $("#panelSchedule");
-  const panelEmails = $("#panelEmails");
-
-  if (mode === "schedule") {
-    if (schedWrap) schedWrap.style.display = "";
-    if (emailWrap) emailWrap.style.display = "none";
-    if (panelSchedule) panelSchedule.style.display = "";
-    if (panelEmails) panelEmails.style.display = "none";
-  } else {
-    if (schedWrap) schedWrap.style.display = "none";
-    if (emailWrap) emailWrap.style.display = "";
-    if (panelSchedule) panelSchedule.style.display = "none";
-    if (panelEmails) panelEmails.style.display = "";
-  }
-}
-
-/* ---------------- Weekly schedule ---------------- */
-async function loadWeeklySchedule() {
-  setPill("#schedStatus", "Loading…");
-
-  // Preferred: weeklyConfig lives on getAdminStatus (you already have this)
-  const admin = await apiGet({ action: "getAdminStatus" });
-  const cfg = admin?.status?.weeklyConfig || null;
-
-  if (!cfg) {
-    setPill("#schedStatus", "No weekly config found");
-    toast("Backend did not return weeklyConfig", 3200);
+        <div class="drugRow" style="margin-top:10px">
+          <div style="font-weight:800;margin-bottom:6px">Engine Fuel Level / Ran</div>
+          ${renderPassFailToggle_({
+            label: "Pass",
+            dataLabel: "Engine Fuel Level / Ran",
+            key: "weeklyBoatFuel",
+            noteLabel: "Engine Notes",
+            notePlaceholder: "Required if unchecked",
+            noteTag: "input",
+            noteId: "weeklyBoatFuel",
+            toggleClass: "weeklyBoatFuelToggle",
+            noteClass: "weeklyBoatFuelNotes"
+          })}
+        </div>
+        <label>Engine Hours (if available)</label><input id="weeklyBoatEngineHours" type="number" min="0" />
+      ` : ""}
+    `);
+    wirePassFailToggles_(area);
     return;
   }
 
-  const key = ($("#scheduleTarget")?.value || "pumpWeekly").trim();
-  const currentName = cfg[key] || "Saturday";
-
-  // set select (0-6) based on current weekday string
-  const idx = WEEKDAYS.findIndex(d => d === currentName);
-  if ($("#weeklyDay")) $("#weeklyDay").value = String(idx >= 0 ? idx : 6);
-
-  setPill("#schedStatus", `Current: ${currentName}`);
-}
-
-async function saveWeeklySchedule() {
-  const checkKey = ($("#scheduleTarget")?.value || "").trim();
-  if (!checkKey) throw new Error("Select a weekly item.");
-
-  const dayIdx = Number($("#weeklyDay")?.value ?? 6);
-  const weekday = WEEKDAYS[Number.isFinite(dayIdx) ? dayIdx : 6];
-
-  // Notes exist in UI but are optional; we do not send to GAS unless you add support
-  // const notes = ($("#schedNotes")?.value || "").trim();
-
-  await apiPost({
-    action: "setWeeklyDay",
-    checkKey,
-    weekday,
-    user: adminName()
-  });
-
-  toast(`Saved: ${checkKey} = ${weekday}`);
-  await loadWeeklySchedule();
-}
-
-/* ---------------- Emails (separated groups) ---------------- */
-function ensureEmailSchema_(emailsObj) {
-  // New schema: {daily, weekly, issues, alerts}
-  // Old schema: {issues, drugExp}
-  const out = { daily: [], weekly: [], issues: [], alerts: [] };
-
-  if (!emailsObj || typeof emailsObj !== "object") return out;
-
-  // New keys
-  if (Array.isArray(emailsObj.daily)) out.daily = emailsObj.daily;
-  if (Array.isArray(emailsObj.weekly)) out.weekly = emailsObj.weekly;
-  if (Array.isArray(emailsObj.issues)) out.issues = emailsObj.issues;
-  if (Array.isArray(emailsObj.alerts)) out.alerts = emailsObj.alerts;
-
-  // Back-compat keys
-  if (Array.isArray(emailsObj.drugExp) && !out.alerts.length) out.alerts = emailsObj.drugExp;
-  if (Array.isArray(emailsObj.drugEmails) && !out.alerts.length) out.alerts = emailsObj.drugEmails;
-
-  // Also accept issuesEmails naming
-  if (Array.isArray(emailsObj.issuesEmails) && !out.issues.length) out.issues = emailsObj.issuesEmails;
-
-  // De-dupe + normalize
-  for (const k of Object.keys(out)) {
-    out[k] = Array.from(new Set((out[k] || []).map(x => String(x || "").trim()).filter(Boolean)));
-  }
-  return out;
-}
-
-function currentEmailTarget() {
-  return ($("#emailTarget")?.value || "issues").trim();
-}
-
-function renderEmailEditorForTarget() {
-  const target = currentEmailTarget();
-  const box = $("#emailList");
-
-  if (!box) return;
-
-  if (target === "all") {
-    // Show combined view (readable)
-    const combined = [
-      `# Daily Checks`,
-      ...EMAILS.daily,
-      ``,
-      `# Weekly Checks`,
-      ...EMAILS.weekly,
-      ``,
-      `# Issues / Out-of-Service / Problems`,
-      ...EMAILS.issues,
-      ``,
-      `# Drug Expiration Alerts`,
-      ...EMAILS.alerts
-    ].join("\n");
-    box.value = combined.trim() + "\n";
-    setPill("#emailStatus", "Viewing: ALL (combined)");
+  if (type === "oosUnit") {
+    area.innerHTML = formWrap(`
+      <label>Reason</label><textarea id="oosReason"></textarea>
+      <label>Replacing Reserve Unit</label><input id="oosReplacementReserve" placeholder="E-8 / E-9 / E-10 / T-3 etc." />
+      <label>Equipment Moved (list)</label><input id="oosEquipmentMoved" placeholder="comma list" />
+      <label>Return To Service Date (optional)</label><input id="oosRtsDate" type="date" />
+    `);
     return;
   }
 
-  box.value = joinEmails(EMAILS[target] || []);
-  setPill("#emailStatus", `Viewing: ${target}`);
+  if (type === "oosEquipment") {
+    area.innerHTML = formWrap(`
+      <label>Equipment Type (SCBA/Saw/4-Gas/Bag Monitor/Other)</label><input id="eqType" />
+      <label>Identifier</label><input id="eqIdentifier" />
+      <label>Reason</label><textarea id="eqReason"></textarea>
+      <label>Replacement</label><input id="eqReplacement" />
+      <label>Expected RTS Date (optional)</label><input id="eqRtsDate" type="date" />
+    `);
+    return;
+  }
+
+  area.innerHTML = `<div class="muted">Form not implemented for: ${escapeHtml(type)}</div>`;
 }
 
-async function loadEmails() {
-  setPill("#emailStatus", "Loading…");
+/* ---------------- Read payloads ---------------- */
+function readMedicalDailyPayload() {
+  const drugsPayload = [];
+  document.querySelectorAll("#formArea .drugRow").forEach(row => {
+    const name = row.getAttribute("data-drug") || "";
+    const qty = Number(row.querySelector(".drugQty")?.value || 0);
+    const exp = toYmdDateInput(String(row.querySelector(".drugExp")?.value || "").trim());
+    if (name && exp) drugsPayload.push({ name, qty, exp });
+  });
 
-  // Preferred dedicated endpoint
-  const res = await apiGetSoft({ action: "getEmailRecipients" });
+  const airwayToggle = document.querySelector('#formArea .passFailToggle[data-note-id="airway"]');
+  const airwayNotesInput = document.querySelector('#formArea .failNoteWrap[data-note-id="airway"] textarea');
+  const airwayOk = airwayToggle ? airwayToggle.checked : true;
+  const airwayNotes = airwayNotesInput?.value?.trim() || "";
+  if (!airwayOk && !airwayNotes) {
+    throw new Error("Airway Equipment requires fail notes.");
+  }
 
-  if (!res) {
-    // fallback attempt: maybe embedded in admin status
-    const admin = await apiGet({ action: "getAdminStatus" });
-    const embedded = admin?.status?.emails || admin?.status?.emailRecipients || null;
+  return {
+    o2: Number($("#o2")?.value || 0),
+    airwayPassFail: airwayOk ? "Pass" : "Fail",
+    airwayNotes,
+    drugs: drugsPayload
+  };
+}
 
-    if (!embedded) {
-      EMAILS = { daily: [], weekly: [], issues: [], alerts: [] };
-      renderEmailEditorForTarget();
-      setPill("#emailStatus", "Email actions not installed");
-      toast("Missing GAS action: getEmailRecipients (add it to Code.gs)", 3600);
-      return;
+function readScbaWeeklyPayload() {
+  const entries = [];
+  document.querySelectorAll("#formArea .drugRow").forEach(card => {
+    const label = card.querySelector(".scbaLabel")?.value?.trim() || "";
+    const psi = Number(card.querySelector(".scbaPsi")?.value || 0);
+    const toggle = card.querySelector(".scbaPassToggle");
+    const passFail = toggle?.checked ? "Pass" : "Fail";
+    const notes = card.querySelector(".scbaNotes")?.value?.trim() || "";
+    if (toggle && !toggle.checked && !notes) {
+      throw new Error("SCBA weekly fail requires notes.");
+    }
+    if (label || psi || notes) entries.push({ label, psi, passFail, notes });
+  });
+  return { entries };
+}
+
+function readSawWeeklyPayload() {
+  const entries = [];
+  document.querySelectorAll("#formArea .drugRow").forEach(card => {
+    const type = card.querySelector(".sawType")?.value?.trim() || "";
+    const number = Number(card.querySelector(".sawNumber")?.value || 0);
+    const fuel = Number(card.querySelector(".sawFuel")?.value || 0);
+    const barOil = Number(card.querySelector(".sawBarOil")?.value || 0);
+    const runs = card.querySelector(".sawRuns")?.value || "Yes";
+    const notes = card.querySelector(".sawNotes")?.value || "";
+    if (type || number || notes) entries.push({ type, number, fuel, barOil, runs, notes });
+  });
+  return { entries };
+}
+
+/* ---------------- Save ---------------- */
+async function onSave() {
+  const submitter = requireWho();
+  const st = stationId();
+  const ap = apparatusId();
+  const type = selectedCheckType();
+
+  if (!st) throw new Error("Station is required.");
+  if (!ap) throw new Error("Apparatus is required.");
+  if (!type) throw new Error("Check Type is required.");
+
+  // Build checkPayload per type
+  let checkPayload = {};
+
+  if (type === "apparatusDaily") {
+    const items = readDailyItems_();
+    checkPayload = {
+      mileage: Number($("#mileage")?.value || 0),
+      engineHours: Number($("#engineHours")?.value || 0),
+      fuel: Number($("#fuel")?.value || 0),
+      def: Number($("#def")?.value || 0),
+      tank: Number($("#tank")?.value || 0),
+
+      // Checklist items (matches Code.gs submitApparatusDaily_ expectations)
+      knox: items.knox,
+      radios: items.radios,
+      lights: items.lights,
+      scba: items.scba,
+      spareBottles: items.spareBottles,
+      rit: items.rit,
+      flashlights: items.flashlights,
+      tic: items.tic,
+      gasMonitor: items.gasMonitor,
+      handTools: items.handTools,
+      hydraRam: items.hydraRam,
+      groundLadders: items.groundLadders,
+      passports: items.passports,
+      extricationTools: items.extricationTools
+    };
+  } else if (type === "medicalDaily") {
+    checkPayload = readMedicalDailyPayload();
+  } else if (type === "scbaWeekly") {
+    checkPayload = readScbaWeeklyPayload();
+  } else if (type === "pumpWeekly") {
+    const overallOk = $("#formArea .pumpOverallToggle")?.checked ?? true;
+    const notes = $("#formArea .pumpNotes")?.value?.trim() || "";
+    if (!overallOk && !notes) {
+      throw new Error("Pump weekly overall requires fail notes.");
+    }
+    checkPayload = {
+      pumpShift: $("#pumpShift")?.value || "Pass",
+      throttle: $("#throttle")?.value || "Pass",
+      relief: $("#relief")?.value || "Pass",
+      gauges: $("#gauges")?.value || "Pass",
+      overall: overallOk ? "Pass" : "Fail",
+      notes,
+    };
+  } else if (type === "aerialWeekly") {
+    const overallOk = $("#formArea .aerialOverallToggle")?.checked ?? true;
+    const notes = $("#formArea .aerialNotes")?.value?.trim() || "";
+    if (!overallOk && !notes) {
+      throw new Error("Aerial weekly overall requires fail notes.");
+    }
+    checkPayload = {
+      overall: overallOk ? "Pass" : "Fail",
+      notes,
+    };
+  } else if (type === "sawWeekly") {
+    checkPayload = readSawWeeklyPayload();
+  } else if (type === "batteriesWeekly") {
+    checkPayload = {
+      batteryTools: $("#batteryTools")?.value || "",
+      gasMonitorCharged: $("#gasMonitorCharged")?.value || "",
+      unitPhoneCharged: $("#unitPhoneCharged")?.value || "",
+      notes: $("#batteryNotes")?.value || "",
+      extricationCheck: $("#extricationCheck")?.value || "",
+      spreader: $("#spreader")?.value || "",
+      cutter: $("#cutter")?.value || "",
+      ram: $("#ram")?.value || "",
+      allCharged: $("#allCharged")?.value || "",
+      damage: $("#damage")?.value || "",
+    };
+  } else if (type === "weeklyCheck") {
+    const lightsOk = $("#formArea .weeklyLightsToggle")?.checked ?? true;
+    const lightsNotes = $("#formArea .weeklyLightsNotes")?.value?.trim() || "";
+    if (!lightsOk && !lightsNotes) {
+      throw new Error("Lights check requires fail notes.");
     }
 
-    EMAILS = ensureEmailSchema_(embedded);
-    renderEmailEditorForTarget();
-    setPill("#emailStatus", "Loaded (from getAdminStatus)");
-    return;
+    const genOk = $("#formArea .weeklyGeneratorToggle")?.checked ?? true;
+    const genNotes = $("#formArea .weeklyGeneratorNotes")?.value?.trim() || "";
+    if (!genOk && !genNotes) {
+      throw new Error("Generator check requires fail notes.");
+    }
+
+    const smallEngOk = $("#formArea .weeklySmallEnginesToggle")?.checked ?? true;
+    const smallEngNotes = $("#formArea .weeklySmallEnginesNotes")?.value?.trim() || "";
+    if (!smallEngOk && !smallEngNotes) {
+      throw new Error("Small engines check requires fail notes.");
+    }
+
+    const batteriesOk = $("#formArea .weeklyBatteriesToggle")?.checked ?? true;
+    const batteriesNotes = $("#formArea .weeklyBatteriesNotes")?.value?.trim() || "";
+    if (!batteriesOk && !batteriesNotes) {
+      throw new Error("Battery check requires fail notes.");
+    }
+
+    const boatFuelOk = $("#formArea .weeklyBoatFuelToggle")?.checked ?? true;
+    const boatFuelNotes = $("#formArea .weeklyBoatFuelNotes")?.value?.trim() || "";
+    if (!boatFuelOk && !boatFuelNotes) {
+      throw new Error("Boat engine check requires fail notes.");
+    }
+
+    checkPayload = {
+      category: (() => {
+        if (isMabasUnit(ap)) return "MABAS";
+        if (isTrailerUnit(ap)) return "Trailer";
+        if (isBoatUnit(ap)) return "Boat";
+        return "Weekly";
+      })(),
+      mileage: Number($("#weeklyMileage")?.value || 0),
+      engineHours: Number($("#weeklyEngineHours")?.value || 0),
+      generatorHours: Number($("#weeklyGeneratorHours")?.value || 0),
+      fuelLevel: Number($("#weeklyFuelLevel")?.value || 0),
+      lightsCheck: lightsOk ? "Pass" : "Fail",
+      lightsNotes,
+      generatorCheck: genOk ? "Pass" : "Fail",
+      generatorNotes: genNotes,
+      smallEnginesCheck: smallEngOk ? "Pass" : "Fail",
+      smallEnginesNotes: smallEngNotes,
+      batteriesCheck: batteriesOk ? "Pass" : "Fail",
+      batteriesNotes,
+      boatFuelCheck: boatFuelOk ? "Pass" : "Fail",
+      boatFuelNotes,
+      boatEngineHours: Number($("#weeklyBoatEngineHours")?.value || 0),
+    };
+  } else if (type === "oosUnit") {
+    checkPayload = {
+      reason: $("#oosReason")?.value || "",
+      replacementReserve: $("#oosReplacementReserve")?.value || "",
+      equipmentMoved: $("#oosEquipmentMoved")?.value || "",
+      rtsDate: $("#oosRtsDate")?.value || "",
+    };
+  } else if (type === "oosEquipment") {
+    checkPayload = {
+      type: $("#eqType")?.value || "",
+      identifier: $("#eqIdentifier")?.value || "",
+      reason: $("#eqReason")?.value || "",
+      replacement: $("#eqReplacement")?.value || "",
+      rtsDate: $("#eqRtsDate")?.value || "",
+    };
   }
 
-  EMAILS = ensureEmailSchema_(res.emails || res.recipients || null);
-  renderEmailEditorForTarget();
-  setPill("#emailStatus", "Loaded");
-}
+  const newIssueText = ($("#newIssue")?.value || "").trim();
+  const newIssueNote = ($("#newIssueNote")?.value || "").trim();
 
-async function saveEmails() {
-  const target = currentEmailTarget();
-  const text = $("#emailList")?.value || "";
-
-  if (target === "all") {
-    // "All" is a combined display; we won't try to parse headers.
-    // Safer: require editing groups individually.
-    throw new Error("Edit & save one group at a time (Daily/Weekly/Issues/Alerts).");
-  }
-
-  const list = normalizeEmails(text);
-  EMAILS[target] = Array.from(new Set(list));
-
-  // Requires GAS action
-  const res = await apiPost({
-    action: "setEmailRecipients",
-    user: adminName(),
-    emails: EMAILS
-  });
-
-  toast("Recipients saved");
-  // re-load from server if it returned anything
-  if (res?.emails) EMAILS = ensureEmailSchema_(res.emails);
-  renderEmailEditorForTarget();
-}
-
-async function clearEmailsForGroup() {
-  const target = currentEmailTarget();
-  if (target === "all") throw new Error("Pick a specific group to clear.");
-  EMAILS[target] = [];
-
+  setStatus("Saving…");
   await apiPost({
-    action: "setEmailRecipients",
-    user: adminName(),
-    emails: EMAILS
+    action: "saveCheck",
+    stationId: st,
+    apparatusId: ap,
+    submitter,
+    checkType: type,
+    checkPayload,
+    newIssueText,
+    newIssueNote
   });
 
-  toast("Group cleared");
-  renderEmailEditorForTarget();
+  // Clear only the new issue fields (so they don’t resend duplicates)
+  if ($("#newIssue")) $("#newIssue").value = "";
+  if ($("#newIssueNote")) $("#newIssueNote").value = "";
+
+  // Refresh issues
+  await refreshIssues();
+
+  // Refresh drug master after medical save (so last-known updates)
+  if (type === "medicalDaily") {
+    await loadDrugMaster(ap);
+    renderForm(); // re-render so Last Known Exp updates visually
+  }
+
+  setStatus("Saved ✅");
 }
 
-/* ---------------- Reload routing ---------------- */
-async function reloadCurrent() {
-  const mode = ($("#configType")?.value || "schedule").trim();
-  showMode(mode);
+/* ---------------- Events ---------------- */
+async function onStationChange() {
+  savePrefs();
+  setStatus("Loading apparatus…");
+  await loadApparatusForStation(stationId());
+  renderCheckTypeOptions();
+  await onApparatusChange();
+}
 
-  if (mode === "schedule") {
-    await loadWeeklySchedule();
-  } else {
-    await loadEmails();
+async function onApparatusChange() {
+  savePrefs();
+  renderCheckTypeOptions();
+  updateLocationUi();
+
+  setStatus("Loading issues…");
+  await refreshIssues();
+
+  // Preload drug master for medical daily if needed
+  const ap = apparatusId();
+  await loadDrugMaster(ap);
+
+  renderForm();
+  setStatus("Ready.");
+}
+
+async function onCheckTypeChange() {
+  savePrefs();
+
+  // For medical daily, make sure drug master has been loaded
+  if (selectedCheckType() === "medicalDaily") {
+    await loadDrugMaster(apparatusId());
   }
+
+  renderForm();
 }
 
 /* ---------------- Boot ---------------- */
 async function boot() {
-  // initial mode
-  showMode(($("#configType")?.value || "schedule").trim());
+  setStatus("Loading…");
 
-  $("#configType")?.addEventListener("change", async () => {
-    try { await reloadCurrent(); }
-    catch (e) { toast(e.message, 3200); }
+  // listeners
+  $("#station")?.addEventListener("change", () => onStationChange().catch(e => setStatus(e.message, true)));
+  $("#apparatus")?.addEventListener("change", () => onApparatusChange().catch(e => setStatus(e.message, true)));
+  $("#checkType")?.addEventListener("change", () => onCheckTypeChange().catch(e => setStatus(e.message, true)));
+  $("#location")?.addEventListener("input", saveLocation);
+  $("#saveBtn")?.addEventListener("click", () => {
+    savePrefs();
+    onSave().catch(e => setStatus(e.message, true));
   });
 
-  $("#scheduleTarget")?.addEventListener("change", async () => {
-    try { await loadWeeklySchedule(); }
-    catch (e) { toast(e.message, 3200); }
-  });
+  // init
+  loadPrefs();
+  await loadConfig();
+  await loadApparatusForStation(stationId());
 
-  $("#emailTarget")?.addEventListener("change", () => {
-    try { renderEmailEditorForTarget(); }
-    catch (e) { toast(e.message, 3200); }
-  });
+  // Ensure dropdowns reflect rules
+  renderCheckTypeOptions();
 
-  $("#btnReload")?.addEventListener("click", async () => {
-    try {
-      await reloadCurrent();
-      toast("Reloaded");
-    } catch (e) {
-      toast(e.message, 3200);
-    }
-  });
+  // Re-apply prefs after options exist
+  const savedStation = localStorage.getItem("dfd_station") || "1";
+  const savedAp = localStorage.getItem("dfd_apparatus") || "";
+  const savedType = localStorage.getItem("dfd_checkType") || "";
 
-  $("#btnSaveSchedule")?.addEventListener("click", async () => {
-    try { await saveWeeklySchedule(); }
-    catch (e) { toast(e.message, 3200); }
-  });
+  if ($("#station")) $("#station").value = savedStation;
+  if ($("#apparatus")) $("#apparatus").value = savedAp;
+  renderCheckTypeOptions();
+  if ($("#checkType")) $("#checkType").value = savedType;
 
-  $("#btnSaveEmails")?.addEventListener("click", async () => {
-    try { await saveEmails(); }
-    catch (e) { toast(e.message, 3200); }
-  });
-
-  $("#btnClearEmails")?.addEventListener("click", async () => {
-    try { await clearEmailsForGroup(); }
-    catch (e) { toast(e.message, 3200); }
-  });
-
-  try {
-    await reloadCurrent();
-    toast("Loaded");
-  } catch (e) {
-    toast(e.message, 3200);
-  }
+  // Load dependent data
+  await onApparatusChange();
 }
 
-document.addEventListener("DOMContentLoaded", boot);
+document.addEventListener("DOMContentLoaded", () => {
+  boot().catch(err => setStatus(err.message, true));
+});
