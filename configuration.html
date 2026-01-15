@@ -1,360 +1,207 @@
-        <div class="drugRow" style="margin-top:10px">
-          <div style="font-weight:800;margin-bottom:6px">Engine Fuel Level / Ran</div>
-          ${renderPassFailToggle_({
-            label: "Pass",
-            dataLabel: "Engine Fuel Level / Ran",
-            key: "weeklyBoatFuel",
-            noteLabel: "Engine Notes",
-            notePlaceholder: "Required if unchecked",
-            noteTag: "input",
-            noteId: "weeklyBoatFuel",
-            toggleClass: "weeklyBoatFuelToggle",
-            noteClass: "weeklyBoatFuelNotes"
-          })}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DFD — Configuration</title>
+  <style>
+    :root{
+      --brand:#c41212;
+      --brand-ink:#fff;
+      --ink:#111;
+      --muted:#666;
+      --bg:#fafafa;
+      --card:#fff;
+      --line:#e6e6e6;
+    }
+
+    *{ box-sizing:border-box; }
+    html,body{
+      margin:0; padding:0;
+      background:var(--bg);
+      color:var(--ink);
+      font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      -webkit-text-size-adjust:100%;
+      text-size-adjust:100%;
+    }
+
+    header{
+      position:sticky; top:0; z-index:10;
+      background:var(--brand);
+      color:var(--brand-ink);
+      padding:14px 16px;
+      border-bottom:1px solid rgba(255,255,255,.15);
+    }
+    .wrap{ max-width:1100px; margin:0 auto; padding:0 14px 60px; }
+    .headRow{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:12px; flex-wrap:wrap;
+    }
+    .title{ display:flex; align-items:center; gap:10px; }
+    .badgeBrand{
+      width:34px; height:34px;
+      border-radius:10px;
+      background:rgba(255,255,255,.18);
+      border:1px solid rgba(255,255,255,.28);
+    }
+    h1{ margin:0; font-size:18px; letter-spacing:.2px; }
+    .subhead{ margin:0; opacity:.9; font-size:12px; }
+
+    .toolbar{
+      display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;
+    }
+    .toolbar label{ font-size:12px; opacity:.95; font-weight:700; }
+
+    .toolbar input{
+      height:36px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,.25);
+      background:rgba(255,255,255,.14);
+      color:#fff;
+      padding:0 10px;
+      outline:none;
+      min-width:200px;
+    }
+    .toolbar input::placeholder{ color:rgba(255,255,255,.8); }
+
+    .btn{
+      height:36px;
+      padding:0 12px;
+      border-radius:10px;
+      border:1px solid rgba(0,0,0,.12);
+      background:#fff;
+      color:#111;
+      font-weight:800;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      text-decoration:none;
+      white-space:nowrap;
+    }
+    .btn:active{ transform: translateY(1px); }
+
+    main{ padding-top:14px; }
+
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:12px;
+      box-shadow: 0 8px 18px rgba(0,0,0,.04);
+      margin-top:12px;
+    }
+    .card h2{
+      margin:0 0 8px;
+      font-size:16px;
+      letter-spacing:.2px;
+    }
+    .note{
+      color:var(--muted);
+      font-size:12px;
+    }
+
+    label{ display:block; font-weight:700; margin:10px 0 6px; }
+    select, input, textarea{
+      width:100%; padding:10px 12px; border-radius:10px;
+      border:1px solid #d7dbe0; font:inherit; background:#fff;
+    }
+    textarea{ min-height:80px; resize:vertical; }
+    .row{ display:grid; gap:12px; }
+    @media (min-width:760px){ .row{ grid-template-columns: 1fr 1fr; } }
+    .row3{ display:grid; gap:12px; }
+    @media (min-width:960px){ .row3{ grid-template-columns: 1fr 1fr 1fr; } }
+    .hr{ height:1px; background:#e6e9ee; margin:14px 0; }
+
+    .issue{
+      display:flex; align-items:center; justify-content:space-between;
+      padding:10px; border:1px solid var(--line); border-radius:12px; margin-bottom:10px;
+      gap:12px; flex-wrap:wrap;
+    }
+    .issue h3{ margin:0; font-size:14px; }
+    .issue .meta{ color:var(--muted); font-size:12px; }
+    .issue .right{ display:flex; gap:8px; align-items:center; }
+
+    #toast{
+      position:fixed; bottom:18px; right:18px;
+      background:#111; color:#fff; padding:10px 12px; border-radius:10px;
+      opacity:0; transition:opacity .2s ease; pointer-events:none;
+    }
+    #toast.show{ opacity:1; }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="wrap">
+      <div class="headRow">
+        <div class="title">
+          <div class="badgeBrand"></div>
+          <div>
+            <h1>DFD — Configuration</h1>
+            <p class="subhead">Weekly schedule • Email lists</p>
+          </div>
         </div>
-        <label>Engine Hours (if available)</label><input id="weeklyBoatEngineHours" type="number" min="0" />
-      ` : ""}
-    `);
-    wirePassFailToggles_(area);
-    return;
-  }
 
-  if (type === "oosUnit") {
-    area.innerHTML = formWrap(`
-      <label>Reason</label><textarea id="oosReason"></textarea>
-      <label>Replacing Reserve Unit</label><input id="oosReplacementReserve" placeholder="E-8 / E-9 / E-10 / T-3 etc." />
-      <label>Equipment Moved (list)</label><input id="oosEquipmentMoved" placeholder="comma list" />
-      <label>Return To Service Date (optional)</label><input id="oosRtsDate" type="date" />
-    `);
-    return;
-  }
+        <div class="toolbar">
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label for="adminName">Admin Name (for logging)</label>
+            <input id="adminName" placeholder="Your name (required)" />
+          </div>
 
-  if (type === "oosEquipment") {
-    area.innerHTML = formWrap(`
-      <label>Equipment Type (SCBA/Saw/4-Gas/Bag Monitor/Other)</label><input id="eqType" />
-      <label>Identifier</label><input id="eqIdentifier" />
-      <label>Reason</label><textarea id="eqReason"></textarea>
-      <label>Replacement</label><input id="eqReplacement" />
-      <label>Expected RTS Date (optional)</label><input id="eqRtsDate" type="date" />
-    `);
-    return;
-  }
+          <button class="btn" id="btnWeeklyTab" type="button">Weekly Schedule</button>
+          <button class="btn" id="btnEmailTab" type="button">Email Lists</button>
+        </div>
+      </div>
+    </div>
+  </header>
 
-  area.innerHTML = `<div class="muted">Form not implemented for: ${escapeHtml(type)}</div>`;
-}
+  <main class="wrap">
+    <section class="card" id="weeklySection">
+      <h2>Weekly Schedule</h2>
+      <div class="note">Set the weekday that starts each weekly window.</div>
+      <div id="weeklyConfigBox" style="margin-top:10px"></div>
+    </section>
 
-/* ---------------- Read payloads ---------------- */
-function readMedicalDailyPayload() {
-  const drugsPayload = [];
-  document.querySelectorAll("#formArea .drugRow").forEach(row => {
-    const name = row.getAttribute("data-drug") || "";
-    const qty = Number(row.querySelector(".drugQty")?.value || 0);
-    const exp = toYmdDateInput(String(row.querySelector(".drugExp")?.value || "").trim());
-    if (name && exp) drugsPayload.push({ name, qty, exp });
-  });
+    <section class="card" id="emailSection" style="display:none">
+      <h2>Email Lists</h2>
+      <div class="note">These lists control issue notifications and drug expiration warnings.</div>
 
-  const airwayToggle = document.querySelector('#formArea .passFailToggle[data-note-id="airway"]');
-  const airwayNotesInput = document.querySelector('#formArea .failNoteWrap[data-note-id="airway"] textarea');
-  const airwayOk = airwayToggle ? airwayToggle.checked : true;
-  const airwayNotes = airwayNotesInput?.value?.trim() || "";
-  if (!airwayOk && !airwayNotes) {
-    throw new Error("Airway Equipment requires fail notes.");
-  }
+      <div class="row3" style="margin-top:12px">
+        <div>
+          <label for="emailStation">Station</label>
+          <select id="emailStation"></select>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button class="btn" id="btnSaveStationEmails" type="button">Save Station Emails</button>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button class="btn" id="btnSaveMasterEmails" type="button">Save Master Issues</button>
+        </div>
+      </div>
 
-  return {
-    o2: Number($("#o2")?.value || 0),
-    airwayPassFail: airwayOk ? "Pass" : "Fail",
-    airwayNotes,
-    drugs: drugsPayload
-  };
-}
+      <label for="issuesEmails">Issues Emails (Station)</label>
+      <textarea id="issuesEmails" placeholder="one email per line"></textarea>
 
-function readScbaWeeklyPayload() {
-  const entries = [];
-  document.querySelectorAll("#formArea .drugRow").forEach(card => {
-    const label = card.querySelector(".scbaLabel")?.value?.trim() || "";
-    const psi = Number(card.querySelector(".scbaPsi")?.value || 0);
-    const toggle = card.querySelector(".scbaPassToggle");
-    const passFail = toggle?.checked ? "Pass" : "Fail";
-    const notes = card.querySelector(".scbaNotes")?.value?.trim() || "";
-    if (toggle && !toggle.checked && !notes) {
-      throw new Error("SCBA weekly fail requires notes.");
-    }
-    if (label || psi || notes) entries.push({ label, psi, passFail, notes });
-  });
-  return { entries };
-}
+      <label for="drugAllEmails">Drug Expiration Emails (All <=45 days)</label>
+      <textarea id="drugAllEmails" placeholder="one email per line"></textarea>
 
-function readSawWeeklyPayload() {
-  const entries = [];
-  document.querySelectorAll("#formArea .drugRow").forEach(card => {
-    const type = card.querySelector(".sawType")?.value?.trim() || "";
-    const number = Number(card.querySelector(".sawNumber")?.value || 0);
-    const fuel = Number(card.querySelector(".sawFuel")?.value || 0);
-    const barOil = Number(card.querySelector(".sawBarOil")?.value || 0);
-    const runs = card.querySelector(".sawRuns")?.value || "Yes";
-    const notes = card.querySelector(".sawNotes")?.value || "";
-    if (type || number || notes) entries.push({ type, number, fuel, barOil, runs, notes });
-  });
-  return { entries };
-}
+      <label for="drugPrimaryEmails">Drug Expiration Emails (Primary <=30/14 days)</label>
+      <textarea id="drugPrimaryEmails" placeholder="one email per line"></textarea>
 
-/* ---------------- Save ---------------- */
-async function onSave() {
-  const submitter = requireWho();
-  const st = stationId();
-  const ap = apparatusId();
-  const type = selectedCheckType();
+      <div class="hr"></div>
 
-  if (!st) throw new Error("Station is required.");
-  if (!ap) throw new Error("Apparatus is required.");
-  if (!type) throw new Error("Check Type is required.");
+      <label for="masterIssuesEmails">Master Issues Emails (All Stations)</label>
+      <textarea id="masterIssuesEmails" placeholder="one email per line"></textarea>
+    </section>
+  </main>
 
-  // Build checkPayload per type
-  let checkPayload = {};
+  <div id="toast" aria-live="polite" aria-atomic="true">
+    <span id="toastText">Saved</span>
+  </div>
 
-  if (type === "apparatusDaily") {
-    const items = readDailyItems_();
-    checkPayload = {
-      mileage: Number($("#mileage")?.value || 0),
-      engineHours: Number($("#engineHours")?.value || 0),
-      fuel: Number($("#fuel")?.value || 0),
-      def: Number($("#def")?.value || 0),
-      tank: Number($("#tank")?.value || 0),
-
-      // Checklist items (matches Code.gs submitApparatusDaily_ expectations)
-      knox: items.knox,
-      radios: items.radios,
-      lights: items.lights,
-      scba: items.scba,
-      spareBottles: items.spareBottles,
-      rit: items.rit,
-      flashlights: items.flashlights,
-      tic: items.tic,
-      gasMonitor: items.gasMonitor,
-      handTools: items.handTools,
-      hydraRam: items.hydraRam,
-      groundLadders: items.groundLadders,
-      passports: items.passports,
-      extricationTools: items.extricationTools
-    };
-  } else if (type === "medicalDaily") {
-    checkPayload = readMedicalDailyPayload();
-  } else if (type === "scbaWeekly") {
-    checkPayload = readScbaWeeklyPayload();
-  } else if (type === "pumpWeekly") {
-    const overallOk = $("#formArea .pumpOverallToggle")?.checked ?? true;
-    const notes = $("#formArea .pumpNotes")?.value?.trim() || "";
-    if (!overallOk && !notes) {
-      throw new Error("Pump weekly overall requires fail notes.");
-    }
-    checkPayload = {
-      pumpShift: $("#pumpShift")?.value || "Pass",
-      throttle: $("#throttle")?.value || "Pass",
-      relief: $("#relief")?.value || "Pass",
-      gauges: $("#gauges")?.value || "Pass",
-      overall: overallOk ? "Pass" : "Fail",
-      notes,
-    };
-  } else if (type === "aerialWeekly") {
-    const overallOk = $("#formArea .aerialOverallToggle")?.checked ?? true;
-    const notes = $("#formArea .aerialNotes")?.value?.trim() || "";
-    if (!overallOk && !notes) {
-      throw new Error("Aerial weekly overall requires fail notes.");
-    }
-    checkPayload = {
-      overall: overallOk ? "Pass" : "Fail",
-      notes,
-    };
-  } else if (type === "sawWeekly") {
-    checkPayload = readSawWeeklyPayload();
-  } else if (type === "batteriesWeekly") {
-    checkPayload = {
-      batteryTools: $("#batteryTools")?.value || "",
-      gasMonitorCharged: $("#gasMonitorCharged")?.value || "",
-      unitPhoneCharged: $("#unitPhoneCharged")?.value || "",
-      notes: $("#batteryNotes")?.value || "",
-      extricationCheck: $("#extricationCheck")?.value || "",
-      spreader: $("#spreader")?.value || "",
-      cutter: $("#cutter")?.value || "",
-      ram: $("#ram")?.value || "",
-      allCharged: $("#allCharged")?.value || "",
-      damage: $("#damage")?.value || "",
-    };
-  } else if (type === "weeklyCheck") {
-    const lightsOk = $("#formArea .weeklyLightsToggle")?.checked ?? true;
-    const lightsNotes = $("#formArea .weeklyLightsNotes")?.value?.trim() || "";
-    if (!lightsOk && !lightsNotes) {
-      throw new Error("Lights check requires fail notes.");
-    }
-
-    const genOk = $("#formArea .weeklyGeneratorToggle")?.checked ?? true;
-    const genNotes = $("#formArea .weeklyGeneratorNotes")?.value?.trim() || "";
-    if (!genOk && !genNotes) {
-      throw new Error("Generator check requires fail notes.");
-    }
-
-    const smallEngOk = $("#formArea .weeklySmallEnginesToggle")?.checked ?? true;
-    const smallEngNotes = $("#formArea .weeklySmallEnginesNotes")?.value?.trim() || "";
-    if (!smallEngOk && !smallEngNotes) {
-      throw new Error("Small engines check requires fail notes.");
-    }
-
-    const batteriesOk = $("#formArea .weeklyBatteriesToggle")?.checked ?? true;
-    const batteriesNotes = $("#formArea .weeklyBatteriesNotes")?.value?.trim() || "";
-    if (!batteriesOk && !batteriesNotes) {
-      throw new Error("Battery check requires fail notes.");
-    }
-
-    const boatFuelOk = $("#formArea .weeklyBoatFuelToggle")?.checked ?? true;
-    const boatFuelNotes = $("#formArea .weeklyBoatFuelNotes")?.value?.trim() || "";
-    if (!boatFuelOk && !boatFuelNotes) {
-      throw new Error("Boat engine check requires fail notes.");
-    }
-
-    checkPayload = {
-      category: (() => {
-        if (isMabasUnit(ap)) return "MABAS";
-        if (isTrailerUnit(ap)) return "Trailer";
-        if (isBoatUnit(ap)) return "Boat";
-        return "Weekly";
-      })(),
-      mileage: Number($("#weeklyMileage")?.value || 0),
-      engineHours: Number($("#weeklyEngineHours")?.value || 0),
-      generatorHours: Number($("#weeklyGeneratorHours")?.value || 0),
-      fuelLevel: Number($("#weeklyFuelLevel")?.value || 0),
-      lightsCheck: lightsOk ? "Pass" : "Fail",
-      lightsNotes,
-      generatorCheck: genOk ? "Pass" : "Fail",
-      generatorNotes: genNotes,
-      smallEnginesCheck: smallEngOk ? "Pass" : "Fail",
-      smallEnginesNotes: smallEngNotes,
-      batteriesCheck: batteriesOk ? "Pass" : "Fail",
-      batteriesNotes,
-      boatFuelCheck: boatFuelOk ? "Pass" : "Fail",
-      boatFuelNotes,
-      boatEngineHours: Number($("#weeklyBoatEngineHours")?.value || 0),
-    };
-  } else if (type === "oosUnit") {
-    checkPayload = {
-      reason: $("#oosReason")?.value || "",
-      replacementReserve: $("#oosReplacementReserve")?.value || "",
-      equipmentMoved: $("#oosEquipmentMoved")?.value || "",
-      rtsDate: $("#oosRtsDate")?.value || "",
-    };
-  } else if (type === "oosEquipment") {
-    checkPayload = {
-      type: $("#eqType")?.value || "",
-      identifier: $("#eqIdentifier")?.value || "",
-      reason: $("#eqReason")?.value || "",
-      replacement: $("#eqReplacement")?.value || "",
-      rtsDate: $("#eqRtsDate")?.value || "",
-    };
-  }
-
-  const newIssueText = ($("#newIssue")?.value || "").trim();
-  const newIssueNote = ($("#newIssueNote")?.value || "").trim();
-
-  setStatus("Saving…");
-  await apiPost({
-    action: "saveCheck",
-    stationId: st,
-    apparatusId: ap,
-    submitter,
-    checkType: type,
-    checkPayload,
-    newIssueText,
-    newIssueNote
-  });
-
-  // Clear only the new issue fields (so they don’t resend duplicates)
-  if ($("#newIssue")) $("#newIssue").value = "";
-  if ($("#newIssueNote")) $("#newIssueNote").value = "";
-
-  // Refresh issues
-  await refreshIssues();
-
-  // Refresh drug master after medical save (so last-known updates)
-  if (type === "medicalDaily") {
-    await loadDrugMaster(ap);
-    renderForm(); // re-render so Last Known Exp updates visually
-  }
-
-  setStatus("Saved ✅");
-}
-
-/* ---------------- Events ---------------- */
-async function onStationChange() {
-  savePrefs();
-  setStatus("Loading apparatus…");
-  await loadApparatusForStation(stationId());
-  renderCheckTypeOptions();
-  await onApparatusChange();
-}
-
-async function onApparatusChange() {
-  savePrefs();
-  renderCheckTypeOptions();
-  updateLocationUi();
-
-  setStatus("Loading issues…");
-  await refreshIssues();
-
-  // Preload drug master for medical daily if needed
-  const ap = apparatusId();
-  await loadDrugMaster(ap);
-
-  renderForm();
-  setStatus("Ready.");
-}
-
-async function onCheckTypeChange() {
-  savePrefs();
-
-  // For medical daily, make sure drug master has been loaded
-  if (selectedCheckType() === "medicalDaily") {
-    await loadDrugMaster(apparatusId());
-  }
-
-  renderForm();
-}
-
-/* ---------------- Boot ---------------- */
-async function boot() {
-  setStatus("Loading…");
-
-  // listeners
-  $("#station")?.addEventListener("change", () => onStationChange().catch(e => setStatus(e.message, true)));
-  $("#apparatus")?.addEventListener("change", () => onApparatusChange().catch(e => setStatus(e.message, true)));
-  $("#checkType")?.addEventListener("change", () => onCheckTypeChange().catch(e => setStatus(e.message, true)));
-  $("#location")?.addEventListener("input", saveLocation);
-  $("#saveBtn")?.addEventListener("click", () => {
-    savePrefs();
-    onSave().catch(e => setStatus(e.message, true));
-  });
-
-  // init
-  loadPrefs();
-  await loadConfig();
-  await loadApparatusForStation(stationId());
-
-  // Ensure dropdowns reflect rules
-  renderCheckTypeOptions();
-
-  // Re-apply prefs after options exist
-  const savedStation = localStorage.getItem("dfd_station") || "1";
-  const savedAp = localStorage.getItem("dfd_apparatus") || "";
-  const savedType = localStorage.getItem("dfd_checkType") || "";
-
-  if ($("#station")) $("#station").value = savedStation;
-  if ($("#apparatus")) $("#apparatus").value = savedAp;
-  renderCheckTypeOptions();
-  if ($("#checkType")) $("#checkType").value = savedType;
-
-  // Load dependent data
-  await onApparatusChange();
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  boot().catch(err => setStatus(err.message, true));
-});
+  <script src="./configuration.js"></script>
+</body>
+</html>
