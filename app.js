@@ -13,6 +13,40 @@
 
 const $ = (s) => document.querySelector(s);
 
+const TRAILER_UNITS = new Set(["HAZMAT","TRT"]);
+const BOAT_UNITS = new Set(["ZODIAC","DIVE BOAT"]);
+const LOCATION_UNITS = new Set([
+  "E-8","E-9","T-3","R-1","MABAS 43 DECON",
+  "HAZMAT","TRT",
+  "ZODIAC","DIVE BOAT"
+]);
+const EXTRICATION_UNITS = new Set(["E-1","E-4"]);
+
+function normalizeUnitId(id) {
+  return String(id || "").trim().toUpperCase();
+}
+
+function isTrailerUnit(id) {
+  return TRAILER_UNITS.has(normalizeUnitId(id));
+}
+
+function isBoatUnit(id) {
+  return BOAT_UNITS.has(normalizeUnitId(id));
+}
+
+function isMabasUnit(id) {
+  return normalizeUnitId(id) === "MABAS 43 DECON";
+}
+
+function requiresLocation(id) {
+  return LOCATION_UNITS.has(normalizeUnitId(id));
+}
+
+function locationStorageKey(id) {
+  const clean = normalizeUnitId(id) || "unknown";
+  return `dfd_location_${clean}`;
+}
+
 function setStatus(msg, isError = false) {
   const el = $("#status");
   if (!el) return;
@@ -130,34 +164,44 @@ async function apiGetSoft(params) {
   - T-1/T-2/T-3: DO have pumps, so YES Pump Weekly
 */
 function requirementsFor(apparatusIdRaw) {
-  const id = String(apparatusIdRaw || "").toUpperCase().trim();
+  const id = normalizeUnitId(apparatusIdRaw);
+  const isEngine = /^E-\d+$/i.test(id);
+  const isTruck = /^T-\d+$/i.test(id);
+  const isRescue = id === "R-1";
+  const isBattalion = id === "B-1";
+  const isSpecialWeekly = isMabasUnit(id) || isTrailerUnit(id) || isBoatUnit(id);
 
   const req = {
     apparatusDaily: true,
     medicalDaily: true,
     scbaWeekly: true,
-    pumpWeekly: true,
-    aerialWeekly: true,
-    sawWeekly: true,
-    batteriesWeekly: true,
+    pumpWeekly: false,
+    aerialWeekly: false,
+    sawWeekly: false,
+    batteriesWeekly: false,
+    weeklyCheck: false,
     oosUnit: true,
     oosEquipment: true,
   };
 
-  if (id === "E-1") {
-    req.sawWeekly = false;
-    req.aerialWeekly = false;
-  }
-
-  if (id === "R-1") {
+  if (isSpecialWeekly) {
+    req.apparatusDaily = false;
+    req.medicalDaily = false;
+    req.scbaWeekly = false;
     req.pumpWeekly = false;
     req.aerialWeekly = false;
-    req.medicalDaily = false;
+    req.sawWeekly = false;
+    req.batteriesWeekly = false;
+    req.weeklyCheck = true;
+    return req;
   }
 
-  if (/^T-\d+$/i.test(id)) {
-    req.pumpWeekly = true;
-  }
+  if (isEngine || isTruck) req.pumpWeekly = true;
+  if (isTruck || id === "E-5") req.aerialWeekly = true;
+  if (isTruck) req.sawWeekly = true;
+  if (EXTRICATION_UNITS.has(id)) req.batteriesWeekly = true;
+
+  if (isRescue || isBattalion || isMabasUnit(id)) req.medicalDaily = false;
 
   return req;
 }
@@ -185,6 +229,30 @@ function savePrefs() {
   localStorage.setItem("dfd_station", ($("#station")?.value || "1").trim());
   localStorage.setItem("dfd_apparatus", ($("#apparatus")?.value || "").trim());
   localStorage.setItem("dfd_checkType", ($("#checkType")?.value || "").trim());
+}
+
+function updateLocationUi() {
+  const wrap = $("#locationWrap");
+  const input = $("#location");
+  const ap = apparatusId();
+  if (!wrap || !input) return;
+
+  if (!ap || !requiresLocation(ap)) {
+    wrap.style.display = "none";
+    input.value = "";
+    return;
+  }
+
+  wrap.style.display = "";
+  const saved = localStorage.getItem(locationStorageKey(ap)) || "";
+  input.value = saved;
+}
+
+function saveLocation() {
+  const input = $("#location");
+  const ap = apparatusId();
+  if (!input || !ap || !requiresLocation(ap)) return;
+  localStorage.setItem(locationStorageKey(ap), input.value || "");
 }
 
 function requireWho() {
@@ -245,6 +313,7 @@ const CHECK_TYPES = [
   { key: "aerialWeekly",   label: "Aerial Weekly" },
   { key: "sawWeekly",      label: "Saws Weekly" },
   { key: "batteriesWeekly",label: "Batteries Weekly" },
+  { key: "weeklyCheck",    label: "Weekly Check" },
   { key: "oosUnit",        label: "Unit Out of Service" },
   { key: "oosEquipment",   label: "Equipment Out of Service" },
 ];
@@ -315,21 +384,69 @@ async function loadDrugMaster(unit) {
 }
 
 /* ---------------- Daily checklist helpers ---------------- */
+function renderPassFailToggle_(options) {
+  const {
+    label,
+    key,
+    dataLabel = label,
+    noteLabel = "Fail Notes",
+    notePlaceholder = "Required if unchecked",
+    noteTag = "input",
+    noteId = key,
+    toggleClass = "",
+    noteClass = ""
+  } = options;
+
+  const noteField = noteTag === "textarea"
+    ? `<textarea class="${noteClass}" data-key="${escapeHtml(key)}" placeholder="${escapeHtml(notePlaceholder)}"></textarea>`
+    : `<input class="${noteClass}" data-key="${escapeHtml(key)}" placeholder="${escapeHtml(notePlaceholder)}" />`;
+
+  return `
+    <label class="checkLabel">
+      <input type="checkbox" class="passFailToggle ${toggleClass}" data-key="${escapeHtml(key)}" data-label="${escapeHtml(dataLabel)}" data-note-id="${escapeHtml(noteId)}" checked />
+      ${escapeHtml(label)}
+    </label>
+    <div class="failNoteWrap" data-note-id="${escapeHtml(noteId)}">
+      <label style="margin-top:6px">${escapeHtml(noteLabel)}</label>
+      ${noteField}
+    </div>
+  `;
+}
+
+function wirePassFailToggles_(root) {
+  if (!root) return;
+  root.querySelectorAll(".passFailToggle").forEach(toggle => {
+    const noteId = toggle.getAttribute("data-note-id");
+    if (!noteId) return;
+    const wrap = root.querySelector(`.failNoteWrap[data-note-id="${CSS.escape(noteId)}"]`);
+    const noteInput = wrap ? wrap.querySelector("input, textarea") : null;
+
+    const update = () => {
+      const show = !toggle.checked;
+      if (wrap) wrap.style.display = show ? "" : "none";
+      if (noteInput) noteInput.required = show;
+    };
+
+    toggle.addEventListener("change", update);
+    update();
+  });
+}
+
 function renderDailyItem_(label, key) {
   return `
     <div class="drugRow" style="margin-top:10px">
       <div style="font-weight:800;margin-bottom:8px">${escapeHtml(label)}</div>
       <div class="row">
         <div>
-          <label style="margin-top:0">Pass / Fail</label>
-          <select class="dailyPassFail" data-key="${escapeHtml(key)}">
-            <option value="Pass">Pass</option>
-            <option value="Fail">Fail</option>
-          </select>
-        </div>
-        <div>
-          <label style="margin-top:0">Notes</label>
-          <input class="dailyNotes" data-key="${escapeHtml(key)}" placeholder="Notes (optional)" />
+          ${renderPassFailToggle_({
+            label: "Pass",
+            dataLabel: label,
+            key,
+            noteLabel: "Fail Notes",
+            notePlaceholder: "Required if unchecked",
+            toggleClass: "dailyPassToggle",
+            noteClass: "dailyFailNotes"
+          })}
         </div>
       </div>
     </div>
@@ -338,24 +455,28 @@ function renderDailyItem_(label, key) {
 
 function readDailyItems_() {
   const payload = {};
-  document.querySelectorAll("#formArea .dailyPassFail").forEach(sel => {
-    const key = sel.getAttribute("data-key");
+  document.querySelectorAll("#formArea .dailyPassToggle").forEach(toggle => {
+    const key = toggle.getAttribute("data-key");
+    const label = toggle.getAttribute("data-label") || key;
     if (!key) return;
-    payload[key] = payload[key] || {};
-    payload[key].passFail = sel.value || "Pass";
-  });
 
-  document.querySelectorAll("#formArea .dailyNotes").forEach(inp => {
-    const key = inp.getAttribute("data-key");
-    if (!key) return;
+    const notesInput = document.querySelector(`#formArea .dailyFailNotes[data-key="${CSS.escape(key)}"]`);
+    const notes = notesInput?.value?.trim() || "";
+
+    if (!toggle.checked && !notes) {
+      throw new Error(`${label} requires fail notes.`);
+    }
+
     payload[key] = payload[key] || {};
-    payload[key].notes = inp.value || "";
+    payload[key].passFail = toggle.checked ? "Pass" : "Fail";
+    payload[key].notes = notes;
   });
 
   // Ensure every key exists
   const keys = [
     "knox","radios","lights","scba","spareBottles","rit","flashlights",
-    "tic","gasMonitor","handTools","hydraRam","groundLadders","passports"
+    "tic","gasMonitor","handTools","hydraRam","groundLadders","passports",
+    "extricationTools"
   ];
   for (const k of keys) {
     payload[k] = payload[k] || { passFail: "Pass", notes: "" };
@@ -382,6 +503,7 @@ function renderForm() {
   }
 
   if (type === "apparatusDaily") {
+    const showExtrication = EXTRICATION_UNITS.has(normalizeUnitId(apparatusId()));
     area.innerHTML = formWrap(`
       <div class="muted" style="margin-bottom:10px">
         Full apparatus daily checklist.
@@ -409,7 +531,9 @@ function renderForm() {
       ${renderDailyItem_("Hydra-Ram", "hydraRam")}
       ${renderDailyItem_("Ground Ladders", "groundLadders")}
       ${renderDailyItem_("Passports/Shields", "passports")}
+      ${showExtrication ? renderDailyItem_("Extrication Equipment", "extricationTools") : ""}
     `);
+    wirePassFailToggles_(area);
     return;
   }
 
@@ -448,14 +572,18 @@ function renderForm() {
       <label>O2 Bottle Level (0-2000)</label>
       <input id="o2" type="number" min="0" max="2000" />
 
-      <label>Airway Equipment</label>
-      <select id="airwayPassFail">
-        <option>Pass</option>
-        <option>Fail</option>
-      </select>
-
-      <label>Airway Notes</label>
-      <textarea id="airwayNotes" placeholder="Notes (optional)"></textarea>
+      <div class="drugRow" style="margin-top:10px">
+        <div style="font-weight:800;margin-bottom:8px">Airway Equipment</div>
+        ${renderPassFailToggle_({
+          label: "Pass",
+          dataLabel: "Airway Equipment",
+          key: "airway",
+          noteLabel: "Airway Notes",
+          notePlaceholder: "Required if unchecked",
+          noteTag: "textarea",
+          noteId: "airway"
+        })}
+      </div>
 
       <div class="hr"></div>
       <div style="font-weight:800; margin-bottom:8px">Medications</div>
@@ -478,6 +606,7 @@ function renderForm() {
       });
     });
 
+    wirePassFailToggles_(area);
     return;
   }
 
@@ -489,12 +618,21 @@ function renderForm() {
           <div style="font-weight:800;margin-bottom:6px">SCBA ${i}</div>
           <label style="margin-top:0">SCBA Label</label><input class="scbaLabel" />
           <label>Bottle PSI (0-4500)</label><input class="scbaPsi" type="number" min="0" max="4500" />
-          <label>PASS</label>
-          <select class="scbaPassFail"><option>Pass</option><option>Fail</option></select>
-          <label>Notes</label><input class="scbaNotes" />
+          ${renderPassFailToggle_({
+            label: "Pass",
+            dataLabel: `SCBA ${i}`,
+            key: `scba-${i}`,
+            noteLabel: "Fail Notes",
+            notePlaceholder: "Required if unchecked",
+            noteTag: "input",
+            noteId: `scba-${i}`,
+            toggleClass: "scbaPassToggle",
+            noteClass: "scbaNotes"
+          })}
         </div>
       `).join("")}
     `);
+    wirePassFailToggles_(area);
     return;
   }
 
@@ -504,25 +642,48 @@ function renderForm() {
       <label>Throttle Valves</label><input id="throttle" placeholder="Pass / Fail or notes"/>
       <label>Relief Valve</label><input id="relief" placeholder="Pass / Fail or notes"/>
       <label>Gauges</label><input id="gauges" placeholder="Pass / Fail or notes"/>
-      <label>Overall</label>
-      <select id="overall"><option>Pass</option><option>Fail</option></select>
-      <label>Notes</label><textarea id="pumpNotes"></textarea>
+      <div class="drugRow" style="margin-top:10px">
+        <div style="font-weight:800;margin-bottom:6px">Overall</div>
+        ${renderPassFailToggle_({
+          label: "Pass",
+          dataLabel: "Pump Overall",
+          key: "pumpOverall",
+          noteLabel: "Overall Notes",
+          notePlaceholder: "Required if unchecked",
+          noteTag: "textarea",
+          noteId: "pumpOverall",
+          toggleClass: "pumpOverallToggle",
+          noteClass: "pumpNotes"
+        })}
+      </div>
     `);
+    wirePassFailToggles_(area);
     return;
   }
 
   if (type === "aerialWeekly") {
     area.innerHTML = formWrap(`
       <div class="muted">Aerial weekly (basic).</div>
-      <label>Overall</label>
-      <select id="aerialOverall"><option>Pass</option><option>Fail</option></select>
-      <label>Notes</label>
-      <textarea id="aerialNotes"></textarea>
+      <div class="drugRow" style="margin-top:10px">
+        <div style="font-weight:800;margin-bottom:6px">Overall</div>
+        ${renderPassFailToggle_({
+          label: "Pass",
+          dataLabel: "Aerial Overall",
+          key: "aerialOverall",
+          noteLabel: "Overall Notes",
+          notePlaceholder: "Required if unchecked",
+          noteTag: "textarea",
+          noteId: "aerialOverall",
+          toggleClass: "aerialOverallToggle",
+          noteClass: "aerialNotes"
+        })}
+      </div>
       <div class="muted" style="margin-top:10px">
         If you want every aerial switch/step as separate fields (master, outriggers, ladder extend, nozzle, etc.),
         I’ll wire them all.
       </div>
     `);
+    wirePassFailToggles_(area);
     return;
   }
 
@@ -561,6 +722,103 @@ function renderForm() {
     return;
   }
 
+  if (type === "weeklyCheck") {
+    const ap = apparatusId();
+    const isMabas = isMabasUnit(ap);
+    const isTrailer = isTrailerUnit(ap);
+    const isBoat = isBoatUnit(ap);
+
+    area.innerHTML = formWrap(`
+      ${isMabas ? `
+        <label>Mileage</label><input id="weeklyMileage" type="number" min="0" />
+        <label>Engine Hours</label><input id="weeklyEngineHours" type="number" min="0" />
+        <label>Generator Hours</label><input id="weeklyGeneratorHours" type="number" min="0" />
+        <label>Fuel %</label><input id="weeklyFuelLevel" type="number" min="0" max="100" />
+
+        <div class="drugRow" style="margin-top:10px">
+          <div style="font-weight:800;margin-bottom:6px">Lights Check</div>
+          ${renderPassFailToggle_({
+            label: "Pass",
+            dataLabel: "Lights Check",
+            key: "weeklyLights",
+            noteLabel: "Lights Notes",
+            notePlaceholder: "Required if unchecked",
+            noteTag: "input",
+            noteId: "weeklyLights",
+            toggleClass: "weeklyLightsToggle",
+            noteClass: "weeklyLightsNotes"
+          })}
+        </div>
+
+        <div class="drugRow" style="margin-top:10px">
+          <div style="font-weight:800;margin-bottom:6px">Generator Ran / Working</div>
+          ${renderPassFailToggle_({
+            label: "Pass",
+            dataLabel: "Generator Ran / Working",
+            key: "weeklyGenerator",
+            noteLabel: "Generator Notes",
+            notePlaceholder: "Required if unchecked",
+            noteTag: "input",
+            noteId: "weeklyGenerator",
+            toggleClass: "weeklyGeneratorToggle",
+            noteClass: "weeklyGeneratorNotes"
+          })}
+        </div>
+      ` : ""}
+
+      ${isTrailer ? `
+        <div class="drugRow" style="margin-top:10px">
+          <div style="font-weight:800;margin-bottom:6px">Small Engines Fuel Level / Ran</div>
+          ${renderPassFailToggle_({
+            label: "Pass",
+            dataLabel: "Small Engines Fuel Level / Ran",
+            key: "weeklySmallEngines",
+            noteLabel: "Small Engines Notes",
+            notePlaceholder: "Required if unchecked",
+            noteTag: "input",
+            noteId: "weeklySmallEngines",
+            toggleClass: "weeklySmallEnginesToggle",
+            noteClass: "weeklySmallEnginesNotes"
+          })}
+        </div>
+        <div class="drugRow" style="margin-top:10px">
+          <div style="font-weight:800;margin-bottom:6px">All Batteries Charged</div>
+          ${renderPassFailToggle_({
+            label: "Pass",
+            dataLabel: "All Batteries Charged",
+            key: "weeklyBatteries",
+            noteLabel: "Battery Notes",
+            notePlaceholder: "Required if unchecked",
+            noteTag: "input",
+            noteId: "weeklyBatteries",
+            toggleClass: "weeklyBatteriesToggle",
+            noteClass: "weeklyBatteriesNotes"
+          })}
+        </div>
+      ` : ""}
+
+      ${isBoat ? `
+        <div class="drugRow" style="margin-top:10px">
+          <div style="font-weight:800;margin-bottom:6px">Engine Fuel Level / Ran</div>
+          ${renderPassFailToggle_({
+            label: "Pass",
+            dataLabel: "Engine Fuel Level / Ran",
+            key: "weeklyBoatFuel",
+            noteLabel: "Engine Notes",
+            notePlaceholder: "Required if unchecked",
+            noteTag: "input",
+            noteId: "weeklyBoatFuel",
+            toggleClass: "weeklyBoatFuelToggle",
+            noteClass: "weeklyBoatFuelNotes"
+          })}
+        </div>
+        <label>Engine Hours (if available)</label><input id="weeklyBoatEngineHours" type="number" min="0" />
+      ` : ""}
+    `);
+    wirePassFailToggles_(area);
+    return;
+  }
+
   if (type === "oosUnit") {
     area.innerHTML = formWrap(`
       <label>Reason</label><textarea id="oosReason"></textarea>
@@ -595,10 +853,18 @@ function readMedicalDailyPayload() {
     if (name && exp) drugsPayload.push({ name, qty, exp });
   });
 
+  const airwayToggle = document.querySelector('#formArea .passFailToggle[data-note-id="airway"]');
+  const airwayNotesInput = document.querySelector('#formArea .failNoteWrap[data-note-id="airway"] textarea');
+  const airwayOk = airwayToggle ? airwayToggle.checked : true;
+  const airwayNotes = airwayNotesInput?.value?.trim() || "";
+  if (!airwayOk && !airwayNotes) {
+    throw new Error("Airway Equipment requires fail notes.");
+  }
+
   return {
     o2: Number($("#o2")?.value || 0),
-    airwayPassFail: ($("#airwayPassFail")?.value || "Pass"),
-    airwayNotes: ($("#airwayNotes")?.value || ""),
+    airwayPassFail: airwayOk ? "Pass" : "Fail",
+    airwayNotes,
     drugs: drugsPayload
   };
 }
@@ -608,8 +874,12 @@ function readScbaWeeklyPayload() {
   document.querySelectorAll("#formArea .drugRow").forEach(card => {
     const label = card.querySelector(".scbaLabel")?.value?.trim() || "";
     const psi = Number(card.querySelector(".scbaPsi")?.value || 0);
-    const passFail = card.querySelector(".scbaPassFail")?.value || "Pass";
-    const notes = card.querySelector(".scbaNotes")?.value || "";
+    const toggle = card.querySelector(".scbaPassToggle");
+    const passFail = toggle?.checked ? "Pass" : "Fail";
+    const notes = card.querySelector(".scbaNotes")?.value?.trim() || "";
+    if (toggle && !toggle.checked && !notes) {
+      throw new Error("SCBA weekly fail requires notes.");
+    }
     if (label || psi || notes) entries.push({ label, psi, passFail, notes });
   });
   return { entries };
@@ -665,25 +935,36 @@ async function onSave() {
       handTools: items.handTools,
       hydraRam: items.hydraRam,
       groundLadders: items.groundLadders,
-      passports: items.passports
+      passports: items.passports,
+      extricationTools: items.extricationTools
     };
   } else if (type === "medicalDaily") {
     checkPayload = readMedicalDailyPayload();
   } else if (type === "scbaWeekly") {
     checkPayload = readScbaWeeklyPayload();
   } else if (type === "pumpWeekly") {
+    const overallOk = $("#formArea .pumpOverallToggle")?.checked ?? true;
+    const notes = $("#formArea .pumpNotes")?.value?.trim() || "";
+    if (!overallOk && !notes) {
+      throw new Error("Pump weekly overall requires fail notes.");
+    }
     checkPayload = {
       pumpShift: $("#pumpShift")?.value || "Pass",
       throttle: $("#throttle")?.value || "Pass",
       relief: $("#relief")?.value || "Pass",
       gauges: $("#gauges")?.value || "Pass",
-      overall: $("#overall")?.value || "Pass",
-      notes: $("#pumpNotes")?.value || "",
+      overall: overallOk ? "Pass" : "Fail",
+      notes,
     };
   } else if (type === "aerialWeekly") {
+    const overallOk = $("#formArea .aerialOverallToggle")?.checked ?? true;
+    const notes = $("#formArea .aerialNotes")?.value?.trim() || "";
+    if (!overallOk && !notes) {
+      throw new Error("Aerial weekly overall requires fail notes.");
+    }
     checkPayload = {
-      overall: $("#aerialOverall")?.value || "Pass",
-      notes: $("#aerialNotes")?.value || "",
+      overall: overallOk ? "Pass" : "Fail",
+      notes,
     };
   } else if (type === "sawWeekly") {
     checkPayload = readSawWeeklyPayload();
@@ -699,6 +980,60 @@ async function onSave() {
       ram: $("#ram")?.value || "",
       allCharged: $("#allCharged")?.value || "",
       damage: $("#damage")?.value || "",
+    };
+  } else if (type === "weeklyCheck") {
+    const lightsOk = $("#formArea .weeklyLightsToggle")?.checked ?? true;
+    const lightsNotes = $("#formArea .weeklyLightsNotes")?.value?.trim() || "";
+    if (!lightsOk && !lightsNotes) {
+      throw new Error("Lights check requires fail notes.");
+    }
+
+    const genOk = $("#formArea .weeklyGeneratorToggle")?.checked ?? true;
+    const genNotes = $("#formArea .weeklyGeneratorNotes")?.value?.trim() || "";
+    if (!genOk && !genNotes) {
+      throw new Error("Generator check requires fail notes.");
+    }
+
+    const smallEngOk = $("#formArea .weeklySmallEnginesToggle")?.checked ?? true;
+    const smallEngNotes = $("#formArea .weeklySmallEnginesNotes")?.value?.trim() || "";
+    if (!smallEngOk && !smallEngNotes) {
+      throw new Error("Small engines check requires fail notes.");
+    }
+
+    const batteriesOk = $("#formArea .weeklyBatteriesToggle")?.checked ?? true;
+    const batteriesNotes = $("#formArea .weeklyBatteriesNotes")?.value?.trim() || "";
+    if (!batteriesOk && !batteriesNotes) {
+      throw new Error("Battery check requires fail notes.");
+    }
+
+    const boatFuelOk = $("#formArea .weeklyBoatFuelToggle")?.checked ?? true;
+    const boatFuelNotes = $("#formArea .weeklyBoatFuelNotes")?.value?.trim() || "";
+    if (!boatFuelOk && !boatFuelNotes) {
+      throw new Error("Boat engine check requires fail notes.");
+    }
+
+    checkPayload = {
+      category: (() => {
+        if (isMabasUnit(ap)) return "MABAS";
+        if (isTrailerUnit(ap)) return "Trailer";
+        if (isBoatUnit(ap)) return "Boat";
+        return "Weekly";
+      })(),
+      mileage: Number($("#weeklyMileage")?.value || 0),
+      engineHours: Number($("#weeklyEngineHours")?.value || 0),
+      generatorHours: Number($("#weeklyGeneratorHours")?.value || 0),
+      fuelLevel: Number($("#weeklyFuelLevel")?.value || 0),
+      lightsCheck: lightsOk ? "Pass" : "Fail",
+      lightsNotes,
+      generatorCheck: genOk ? "Pass" : "Fail",
+      generatorNotes: genNotes,
+      smallEnginesCheck: smallEngOk ? "Pass" : "Fail",
+      smallEnginesNotes: smallEngNotes,
+      batteriesCheck: batteriesOk ? "Pass" : "Fail",
+      batteriesNotes,
+      boatFuelCheck: boatFuelOk ? "Pass" : "Fail",
+      boatFuelNotes,
+      boatEngineHours: Number($("#weeklyBoatEngineHours")?.value || 0),
     };
   } else if (type === "oosUnit") {
     checkPayload = {
@@ -760,6 +1095,7 @@ async function onStationChange() {
 async function onApparatusChange() {
   savePrefs();
   renderCheckTypeOptions();
+  updateLocationUi();
 
   setStatus("Loading issues…");
   await refreshIssues();
@@ -791,6 +1127,7 @@ async function boot() {
   $("#station")?.addEventListener("change", () => onStationChange().catch(e => setStatus(e.message, true)));
   $("#apparatus")?.addEventListener("change", () => onApparatusChange().catch(e => setStatus(e.message, true)));
   $("#checkType")?.addEventListener("change", () => onCheckTypeChange().catch(e => setStatus(e.message, true)));
+  $("#location")?.addEventListener("input", saveLocation);
   $("#saveBtn")?.addEventListener("click", () => {
     savePrefs();
     onSave().catch(e => setStatus(e.message, true));
