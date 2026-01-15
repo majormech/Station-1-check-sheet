@@ -13,16 +13,78 @@ var STATIONS = {
     apparatus: [
       { apparatusId: "E-1", apparatusName: "E-1" },
       { apparatusId: "T-1", apparatusName: "T-1" },
-      { apparatusId: "R-1", apparatusName: "R-1" },
-      { apparatusId: "T-3", apparatusName: "T-3 (Reserve)" }
+      { apparatusId: "B-1", apparatusName: "B-1" }
     ]
   },
-  "2": { stationId: "2", stationName: "Station 2", apparatus: [] },
-  "3": { stationId: "3", stationName: "Station 3", apparatus: [] },
-  "4": { stationId: "4", stationName: "Station 4", apparatus: [] },
-  "5": { stationId: "5", stationName: "Station 5", apparatus: [] },
-  "6": { stationId: "6", stationName: "Station 6", apparatus: [] },
-  "7": { stationId: "7", stationName: "Station 7", apparatus: [] }
+  "2": {
+    stationId: "2",
+    stationName: "Station 2",
+    apparatus: [
+      { apparatusId: "T-2", apparatusName: "T-2" }
+    ]
+  },
+  "3": {
+    stationId: "3",
+    stationName: "Station 3",
+    apparatus: [
+      { apparatusId: "E-3", apparatusName: "E-3" }
+    ]
+  },
+  "4": {
+    stationId: "4",
+    stationName: "Station 4",
+    apparatus: [
+      { apparatusId: "E-4", apparatusName: "E-4" }
+    ]
+  },
+  "5": {
+    stationId: "5",
+    stationName: "Station 5",
+    apparatus: [
+      { apparatusId: "E-5", apparatusName: "E-5" }
+    ]
+  },
+  "6": {
+    stationId: "6",
+    stationName: "Station 6",
+    apparatus: [
+      { apparatusId: "E-6", apparatusName: "E-6" }
+    ]
+  },
+  "7": {
+    stationId: "7",
+    stationName: "Station 7",
+    apparatus: [
+      { apparatusId: "E-7", apparatusName: "E-7" }
+    ]
+  },
+  "8": {
+    stationId: "8",
+    stationName: "Reserve",
+    apparatus: [
+      { apparatusId: "E-8", apparatusName: "E-8" },
+      { apparatusId: "E-9", apparatusName: "E-9" },
+      { apparatusId: "T-3", apparatusName: "T-3" },
+      { apparatusId: "R-1", apparatusName: "R-1" },
+      { apparatusId: "MABAS 43 Decon", apparatusName: "MABAS 43 Decon" }
+    ]
+  },
+  "9": {
+    stationId: "9",
+    stationName: "Trailers",
+    apparatus: [
+      { apparatusId: "Hazmat", apparatusName: "Hazmat" },
+      { apparatusId: "TRT", apparatusName: "TRT" }
+    ]
+  },
+  "10": {
+    stationId: "10",
+    stationName: "Boats",
+    apparatus: [
+      { apparatusId: "Zodiac", apparatusName: "Zodiac" },
+      { apparatusId: "Dive Boat", apparatusName: "Dive Boat" }
+    ]
+  }
 };
 
 /******************************************************
@@ -59,7 +121,16 @@ var CONFIG = {
   },
   drugSheets: {
     "E-1": "DrugMaster_E-1",
-    "T-1": "DrugMaster_T-1"
+    "T-1": "DrugMaster_T-1",
+    "E-3": "DrugMaster_E-3",
+    "E-4": "DrugMaster_E-4",
+    "E-5": "DrugMaster_E-5",
+    "E-6": "DrugMaster_E-6",
+    "E-7": "DrugMaster_E-7",
+    "E-8": "DrugMaster_E-8",
+    "E-9": "DrugMaster_E-9",
+    "T-2": "DrugMaster_T-2",
+    "T-3": "DrugMaster_T-3"
   }
 };
 
@@ -73,6 +144,7 @@ var TAB_PUMP_WEEKLY     = "Pump_Weekly";
 var TAB_AERIAL_WEEKLY   = "Aerial_Weekly";
 var TAB_SAW_WEEKLY      = "Saw_Weekly";
 var TAB_BATTERY_WEEKLY  = "Batteries_Weekly";
+var TAB_WEEKLY_CHECK    = "Weekly_Check";
 var TAB_OOS_UNITS       = "OutOfService_Units";
 var TAB_OOS_EQUIP       = "OutOfService_Equipment";
 
@@ -94,7 +166,8 @@ var DEFAULT_WEEKLY_DAY = {
   pumpWeekly: "Saturday",
   aerialWeekly: "Saturday",
   sawWeekly: "Saturday",
-  batteriesWeekly: "Saturday"
+  batteriesWeekly: "Saturday",
+  weeklyCheck: "Saturday"
 };
 
 /******************************************************
@@ -211,6 +284,7 @@ function getAllSearchCategories_() {
     "aerialWeekly",
     "sawWeekly",
     "batteriesWeekly",
+    "weeklyCheck",
     "oosUnit",
     "oosEquipment",
     "issues",
@@ -328,14 +402,17 @@ function doPost(e) {
       var stationId = String(body.stationId || "").trim();
       var emails = body.emails || [];
       var userE = String(body.user || "").trim();
+      var isMaster = stationId === "MASTER";
 
       if (!userE) return json_({ ok:false, error:"Missing user" });
       if (!stationId) return json_({ ok:false, error:"Missing stationId" });
-      if (!STATIONS[stationId]) return json_({ ok:false, error:"Unknown stationId" });
+      if (!isMaster && !STATIONS[stationId]) return json_({ ok:false, error:"Unknown stationId" });
       if (!Array.isArray(emails)) return json_({ ok:false, error:"emails must be an array" });
-
       if (kind !== "issuesByStation" && kind !== "drugsAllByStation" && kind !== "drugsPrimaryByStation") {
         return json_({ ok:false, error:"kind must be issuesByStation | drugsAllByStation | drugsPrimaryByStation" });
+      }
+      if (isMaster && kind !== "issuesByStation") {
+        return json_({ ok:false, error:"MASTER station only supports issuesByStation" });
       }
 
       setEmailConfigByStation_(kind, stationId, emails, userE);
@@ -404,10 +481,20 @@ function ensureSheets_() {
     TAB_AERIAL_WEEKLY,
     TAB_SAW_WEEKLY,
     TAB_BATTERY_WEEKLY,
+    TAB_WEEKLY_CHECK,
     TAB_OOS_UNITS,
     TAB_OOS_EQUIP,
     "DrugMaster_E-1",
     "DrugMaster_T-1",
+    "DrugMaster_E-3",
+    "DrugMaster_E-4",
+    "DrugMaster_E-5",
+    "DrugMaster_E-6",
+    "DrugMaster_E-7", 
+    "DrugMaster_E-8",
+    "DrugMaster_E-9",
+    "DrugMaster_T-2", 
+    "DrugMaster_T-3",
     TAB_ISSUES,
     TAB_MED_EMAIL_ALERTS,
     TAB_EMAIL_CONFIG
@@ -424,6 +511,7 @@ function ensureSheets_() {
   initEmailConfig_();
   return true;
 }
+
 
 function initHeaders_() {
   var ss = SpreadsheetApp.getActive();
@@ -444,7 +532,12 @@ function initHeaders_() {
     "Hand Tools (Pass/Fail)","Hand Tools Notes",
     "Hydra-Ram (Pass/Fail)","Hydra-Ram Notes",
     "Ground Ladders (Pass/Fail)","Ground Ladders Notes",
-    "Passports/Shields (Pass/Fail)","Passports/Shields Notes"
+    "Passports/Shields (Pass/Fail)","Passports/Shields Notes",
+    "Extrication Equipment (Pass/Fail)","Extrication Equipment Notes"
+  ]);
+  ensureHeaderColumns_(ss.getSheetByName(TAB_APPARATUS_DAILY), [
+    "Extrication Equipment (Pass/Fail)",
+    "Extrication Equipment Notes"
   ]);
 
   initHeaderIfEmpty_(ss.getSheetByName(TAB_MEDICAL_DAILY), [
@@ -498,6 +591,26 @@ function initHeaders_() {
     "Damage Noted"
   ]);
 
+  initHeaderIfEmpty_(ss.getSheetByName(TAB_WEEKLY_CHECK), [
+    "Timestamp","Submitter","Unit",
+    "Category",
+    "Mileage",
+    "Engine Hours",
+    "Generator Hours",
+    "Fuel %",
+    "Lights Check (Pass/Fail)",
+    "Lights Notes",
+    "Generator Ran/Working (Pass/Fail)",
+    "Generator Notes",
+    "Small Engines Fuel Level/Ran (Pass/Fail)",
+    "Small Engines Notes",
+    "Batteries Charged (Pass/Fail)",
+    "Batteries Notes",
+    "Boat Engine Fuel Level/Ran (Pass/Fail)",
+    "Boat Engine Notes",
+    "Boat Engine Hours"
+  ]);
+
   initHeaderIfEmpty_(ss.getSheetByName(TAB_OOS_UNITS), [
     "Timestamp","Submitter","Unit",
     "Reason",
@@ -530,8 +643,18 @@ function initHeaders_() {
     "IssueId"
   ]);
 
+// initHeaders_ (initDrugMasterIfEmpty_ calls)
   initDrugMasterIfEmpty_(ss.getSheetByName("DrugMaster_E-1"));
   initDrugMasterIfEmpty_(ss.getSheetByName("DrugMaster_T-1"));
+  initDrugMasterIfEmpty_(ss.getSheetByName ("DrugMaster_E-3"));
+  initDrugMasterIfEmpty_(ss.getSheetByName("DrugMaster_E-4"));
+  initDrugMasterIfEmpty_(ss.getSheetByName("DrugMaster_E-5"));
+  initDrugMasterIfEmpty_(ss.getSheetByName("DrugMaster_E-6"));
+  initDrugMasterIfEmpty_(ss.getSheetByName("DrugMaster_E-7"));
+  initDrugMasterIfEmpty_(ss.getSheetByName("DrugMaster_E-8"));
+  initDrugMasterIfEmpty_(ss.getSheetByName("DrugMaster_E-9"));
+  initDrugMasterIfEmpty_(ss.getSheetByName("DrugMaster_T-2"));
+  initDrugMasterIfEmpty_(ss.getSheetByName("DrugMaster_T-3"));
 }
 
 function initHeaderIfEmpty_(sh, headerRow) {
@@ -543,6 +666,27 @@ function initHeaderIfEmpty_(sh, headerRow) {
   sh.getRange(1,1,1,headerRow.length).setValues([headerRow]);
   sh.getRange(1,1,1,headerRow.length).setFontWeight("bold");
   sh.autoResizeColumns(1, headerRow.length);
+}
+
+function ensureHeaderColumns_(sh, headersToEnsure) {
+  if (!sh) return;
+  var lastCol = sh.getLastColumn() || 1;
+  var header = sh.getRange(1,1,1,lastCol).getValues()[0];
+  var existing = {};
+  for (var i = 0; i < header.length; i++) {
+    existing[String(header[i] || "").trim()] = true;
+  }
+
+  var toAdd = [];
+  (headersToEnsure || []).forEach(function(label) {
+    if (!existing[String(label || "").trim()]) toAdd.push(label);
+  });
+
+  if (!toAdd.length) return;
+
+  sh.insertColumnsAfter(lastCol, toAdd.length);
+  sh.getRange(1, lastCol + 1, 1, toAdd.length).setValues([toAdd]).setFontWeight("bold");
+  sh.autoResizeColumns(lastCol + 1, toAdd.length);
 }
 
 function initDrugMasterIfEmpty_(sh) {
@@ -592,6 +736,10 @@ function initEmailConfig_() {
   Object.keys(STATIONS).forEach(function(sid){
     if (!seen[sid]) sh.appendRow([sid, "", "", ""]);
   });
+
+  if (!seen["MASTER"]) {
+    sh.appendRow(["MASTER", "", "", ""]);
+  }
 }
 
 function parseEmailBlob_(blob) {
@@ -621,16 +769,21 @@ function joinEmailBlob_(arr) {
 function getEmailConfigByStation_() {
   var ss = SpreadsheetApp.getActive();
   var sh = ss.getSheetByName(TAB_EMAIL_CONFIG);
-  if (!sh) return { issuesByStation:{}, drugsAllByStation:{}, drugsPrimaryByStation:{} };
+  if (!sh) return { issuesByStation:{}, drugsAllByStation:{}, drugsPrimaryByStation:{}, masterIssues: [] };
 
   var vals = sh.getDataRange().getValues();
   var issuesByStation = {};
   var drugsAllByStation = {};
   var drugsPrimaryByStation = {};
+  var masterIssues = [];
 
   for (var r=1; r<vals.length; r++) {
     var sid = String(vals[r][0] || "").trim();
     if (!sid) continue;
+    if (sid === "MASTER") {
+      masterIssues = parseEmailBlob_(vals[r][1]);
+      continue;
+    }
     issuesByStation[sid] = parseEmailBlob_(vals[r][1]);
     drugsAllByStation[sid] = parseEmailBlob_(vals[r][2]);
     drugsPrimaryByStation[sid] = parseEmailBlob_(vals[r][3]);
@@ -646,14 +799,16 @@ function getEmailConfigByStation_() {
   return {
     issuesByStation: issuesByStation,
     drugsAllByStation: drugsAllByStation,
-    drugsPrimaryByStation: drugsPrimaryByStation
+    drugsPrimaryByStation: drugsPrimaryByStation,
+    masterIssues: masterIssues
   };
 }
 
 function setEmailConfigByStation_(kind, stationId, emails, user) {
   kind = String(kind||"").trim();
   stationId = String(stationId||"").trim();
-  if (!STATIONS[stationId]) throw new Error("Unknown stationId: " + stationId);
+  var isMaster = stationId === "MASTER";
+  if (!isMaster && !STATIONS[stationId]) throw new Error("Unknown stationId: " + stationId);
 
   var ss = SpreadsheetApp.getActive();
   var sh = ss.getSheetByName(TAB_EMAIL_CONFIG);
@@ -664,6 +819,7 @@ function setEmailConfigByStation_(kind, stationId, emails, user) {
   if (kind === "drugsAllByStation") col = 3;
   if (kind === "drugsPrimaryByStation") col = 4;
   if (!col) throw new Error("Unknown kind: " + kind);
+  if (isMaster && kind !== "issuesByStation") throw new Error("MASTER row only supports issuesByStation");
 
   var vals = sh.getDataRange().getValues();
   var targetRow = -1;
@@ -719,6 +875,7 @@ function saveCheck_(stationId, apparatusId, submitter, checkType, payload) {
   if (type === "aerialweekly")    return submitAerialWeekly_(submitter, apparatusId, payload);
   if (type === "sawweekly")       return submitSawWeekly_(submitter, apparatusId, payload);
   if (type === "batteriesweekly") return submitBatteriesWeekly_(submitter, apparatusId, payload);
+  if (type === "weeklycheck")     return submitWeeklyCheck_(submitter, apparatusId, payload);
   if (type === "oosunit")         return submitOutOfServiceUnit_(submitter, apparatusId, payload);
   if (type === "oosequipment")    return submitOutOfServiceEquipment_(submitter, apparatusId, payload);
 
@@ -760,6 +917,7 @@ function buildChecksStatusForUnit_(unit, weeklyConfig) {
   checks.aerialWeekly    = statusFromSheet_(TAB_AERIAL_WEEKLY, unit, computeWeeklyDueStart_(now, weeklyConfig.aerialWeekly));
   checks.sawWeekly       = statusFromSheet_(TAB_SAW_WEEKLY, unit, computeWeeklyDueStart_(now, weeklyConfig.sawWeekly));
   checks.batteriesWeekly = statusFromSheet_(TAB_BATTERY_WEEKLY, unit, computeWeeklyDueStart_(now, weeklyConfig.batteriesWeekly));
+  checks.weeklyCheck     = statusFromSheet_(TAB_WEEKLY_CHECK, unit, computeWeeklyDueStart_(now, weeklyConfig.weeklyCheck));
 
   return checks;
 }
@@ -910,7 +1068,10 @@ function handleNewIssue_(stationId, apparatusId, submitter, newIssueText, newIss
 function sendIssueEmail_(stationId, apparatusId, submitter, issueText, note) {
   var emailCfg = getEmailConfigByStation_();
   var recipients = (emailCfg.issuesByStation && emailCfg.issuesByStation[String(stationId)]) ? emailCfg.issuesByStation[String(stationId)] : [];
-  recipients = recipients || [];
+  var master = emailCfg.masterIssues || [];
+  recipients = (recipients || []).concat(master || []);
+  recipients = recipients.filter(function(x){ return x; });
+  recipients = Array.from(new Set(recipients));
   if (!recipients.length) return false;
 
   var stName = (STATIONS[stationId] && STATIONS[stationId].stationName)
@@ -1064,7 +1225,6 @@ function notifyExpiringMeds_(payload) {
       sent.all45 = true;
     }
   }
-
   // Primary <=30
   if (toPrimary.length && primary30.length) {
     if (shouldSendDrugTier_(stationId, unit, "PRIMARY_30", primary30)) {
@@ -1512,6 +1672,7 @@ function submitApparatusDaily_(submitter, unit, payload) {
   var hydraRam       = safeItem_(payload.hydraRam);
   var groundLadders  = safeItem_(payload.groundLadders);
   var passports      = safeItem_(payload.passports);
+  var extrication    = safeItem_(payload.extricationTools);
 
   sh.appendRow([
     now, submitter, unit,
@@ -1533,7 +1694,8 @@ function submitApparatusDaily_(submitter, unit, payload) {
     handTools.passFail,      handTools.notes,
     hydraRam.passFail,       hydraRam.notes,
     groundLadders.passFail,  groundLadders.notes,
-    passports.passFail,      passports.notes
+    passports.passFail,      passports.notes,
+    extrication.passFail,    extrication.notes
   ]);
 }
 
@@ -1655,6 +1817,32 @@ function submitBatteriesWeekly_(submitter, unit, payload) {
   ]);
 }
 
+function submitWeeklyCheck_(submitter, unit, payload) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(TAB_WEEKLY_CHECK);
+  if (!sh) throw new Error("Missing sheet: " + TAB_WEEKLY_CHECK);
+  var now = new Date();
+
+  sh.appendRow([
+    now, submitter, unit,
+    payload.category || "",
+    Number(payload.mileage || 0),
+    Number(payload.engineHours || 0),
+    Number(payload.generatorHours || 0),
+    Number(payload.fuelLevel || 0),
+    payload.lightsCheck || "Pass",
+    payload.lightsNotes || "",
+    payload.generatorCheck || "Pass",
+    payload.generatorNotes || "",
+    payload.smallEnginesCheck || "Pass",
+    payload.smallEnginesNotes || "",
+    payload.batteriesCheck || "Pass",
+    payload.batteriesNotes || "",
+    payload.boatFuelCheck || "Pass",
+    payload.boatFuelNotes || "",
+    Number(payload.boatEngineHours || 0)
+  ]);
+}
+
 function submitOutOfServiceUnit_(submitter, unit, payload) {
   var sh = SpreadsheetApp.getActive().getSheetByName(TAB_OOS_UNITS);
   if (!sh) throw new Error("Missing sheet: " + TAB_OOS_UNITS);
@@ -1770,6 +1958,20 @@ function matchesQ_(haystack, q) {
   return String(haystack || "").toLowerCase().indexOf(q) !== -1;
 }
 
+function normalizeSearchText_(value) {
+  return String(value == null ? "" : value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseSearchTokens_(q) {
+  var normalized = normalizeSearchText_(q);
+  if (!normalized) return [];
+  return normalized.split(" ");
+}
+
 function stationMatches_(stationIdFilter, stationIdValue) {
   var f = String(stationIdFilter || "all").trim().toLowerCase();
   if (f === "all" || f === "") return true;
@@ -1814,7 +2016,8 @@ function searchRecords_(p) {
   var perCatLimit = Math.max(50, Math.min(500, Math.ceil(limit / Math.max(1, categories.length)) * 3));
 
   var all = [];
-  for (var i = 0; i < categories.length; i++) {
+   var qTokens = parseSearchTokens_(q);
+   for (var i = 0; i < categories.length; i++) {
     var cat = categories[i];
     var spec = getSearchSpec_(cat);
     if (!spec) continue;
@@ -1833,12 +2036,9 @@ function searchRecords_(p) {
     var width = sh.getLastColumn() || 1;
     var vals = sh.getRange(startRow, 1, lookback, width).getValues();
 
-    var qLower = String(q || "").trim().toLowerCase();
-
     var out = [];
     for (var r = vals.length - 1; r >= 0; r--) {
       var row = vals[r];
-
       var ts = row[spec.tsCol - 1];
       if (!(ts instanceof Date)) continue;
       if (!withinRange_(ts, from, to)) continue;
@@ -1855,14 +2055,21 @@ function searchRecords_(p) {
       if (!apparatusMatches_(apparatusIdF, unit)) continue;
 
       // Search whole row text
-      if (qLower) {
+       if (qTokens.length) {
         var rowText = row.map(function(v){
           if (v instanceof Date) return v.toISOString();
           return String(v == null ? "" : v);
-        }).join(" ").toLowerCase();
+          }).join(" ");
 
-        var blob = (stationVal + " " + unit + " " + submitter + " " + rowText).toLowerCase();
-        if (blob.indexOf(qLower) === -1) continue;
+        var blob = normalizeSearchText_(stationVal + " " + unit + " " + submitter + " " + rowText);
+        var matchesAll = true;
+        for (var t = 0; t < qTokens.length; t++) {
+          if (blob.indexOf(qTokens[t]) === -1) {
+            matchesAll = false;
+            break;
+          }
+        }
+        if (!matchesAll) continue;
       }
 
       out.push({
@@ -1971,6 +2178,16 @@ function getSearchSpec_(category) {
       notesCol: 7,
       summaryFn: function(r){
         return "Gas Charged: " + (r[4] || "") + " • Phone: " + (r[5] || "") + (r[6] ? (" • Notes: " + r[6]) : "");
+      }
+    },
+    weeklyCheck: {
+      tab: TAB_WEEKLY_CHECK,
+      tsCol: 1, submitterCol: 2, unitCol: 3,
+      notesCol: 10,
+      summaryFn: function(r){
+        return "Category: " + (r[3] || "") +
+          " • Mileage: " + (r[4] || 0) +
+          " • Engine Hours: " + (r[5] || 0);
       }
     },
     oosUnit: {
