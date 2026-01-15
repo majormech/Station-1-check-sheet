@@ -33,6 +33,9 @@ async function apiPost(body) {
 }
 
 let META = null;
+let CURRENT_RESULTS = [];
+
+const TEMPLATE_KEY = "dfd_search_templates_v1";
 
 function ymdTodayLocal() {
   const d = new Date();
@@ -57,6 +60,60 @@ function escapeHtml(s) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function safeUuid() {
+  if (crypto?.randomUUID) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function currentFilters() {
+  return {
+    stationId: $("#stationId").value || "all",
+    apparatusId: $("#apparatusId").value || "all",
+    category: $("#category").value || "all",
+    from: $("#from").value || "",
+    to: $("#to").value || "",
+    q: ($("#q").value || "").trim(),
+    limit: $("#limit").value || "200"
+  };
+}
+
+function applyTemplate(template) {
+  if (!template) return;
+  $("#stationId").value = template.stationId || "all";
+  setApparatusOptions(META, $("#stationId").value);
+  $("#apparatusId").value = template.apparatusId || "all";
+  $("#category").value = template.category || "all";
+  $("#from").value = template.from || "";
+  $("#to").value = template.to || "";
+  $("#q").value = template.q || "";
+  $("#limit").value = template.limit || "200";
+}
+
+function loadTemplates() {
+  try {
+    const raw = localStorage.getItem(TEMPLATE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveTemplates(list) {
+  localStorage.setItem(TEMPLATE_KEY, JSON.stringify(list));
+}
+
+function refreshTemplateOptions() {
+  const sel = $("#templateSelect");
+  if (!sel) return;
+  const templates = loadTemplates();
+  sel.innerHTML =
+    `<option value="">Select template…</option>` +
+    templates
+      .map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`)
+      .join("");
 }
 
 function setStationOptions(meta) {
@@ -152,27 +209,6 @@ function labelCategory_(cat) {
   return map[cat] || cat || "";
 }
 
-/* Category optional:
-   - If user selects "All Categories", we run multiple searches (one per category)
-     and merge results (newest first).
-   Why we do it this way:
-   - Your searchRecords_() currently requires a single category.
-   - This makes “category optional” work without changing Code.gs today.
-*/
-const ALL_CATEGORIES = [
-  "apparatusDaily",
-  "medicalDaily",
-  "scbaWeekly",
-  "pumpWeekly",
-  "aerialWeekly",
-  "sawWeekly",
-  "batteriesWeekly",
-  "oosUnit",
-  "oosEquipment",
-  "issues",
-  "medAlerts"
-];
-
 async function runSearch() {
   const stationId = $("#stationId").value || "all";
   const apparatusId = $("#apparatusId").value || "all";
@@ -181,61 +217,31 @@ async function runSearch() {
   const to = $("#to").value || "";
   const q = ($("#q").value || "").trim();
   const limit = Number($("#limit").value || 200);
-
-  // single category
-  if (category !== "all") {
-    const res = await apiGet({
-      action: "searchRecords",
-      stationId,
-      apparatusId,
-      category,
-      from,
-      to,
-      q,
-      limit
-    });
-    renderResults(res.results || []);
-    return;
-  }
-
-  // all categories (fan-out) and merge
-  const perCatLimit = Math.max(25, Math.floor(limit / 3)); // keep requests reasonable
-  const calls = ALL_CATEGORIES.map((cat) =>
-    apiGet({
-      action: "searchRecords",
-      stationId,
-      apparatusId,
-      category: cat,
-      from,
-      to,
-      q,
-      limit: String(perCatLimit)
-    }).then((r) => (r.results || []).map((x) => ({ ...x, category: x.category || cat })))
-      .catch(() => []) // don’t fail everything if one category errors
-  );
-
-  const parts = await Promise.all(calls);
-  let merged = parts.flat();
-
-  // sort newest first
-  merged.sort((a, b) => {
-    const at = new Date(a.timestamp || 0).getTime();
-    const bt = new Date(b.timestamp || 0).getTime();
-    return bt - at;
+const res = await apiGet({
+    action: "searchRecords",
+    stationId,
+    apparatusId,
+    category,
+    from,
+    to,
+    q,
+    limit
   });
-
-  // trim to requested limit
-  merged = merged.slice(0, limit);
-
-  // prettify category labels in table (optional)
-  merged = merged.map(r => ({ ...r, category: labelCategory_(r.category) }));
-
-  renderResults(merged);
+ const rows = (res.results || []).map((r) => ({
+    ...r,
+    category: labelCategory_(r.category || category)
+  }));
+  CURRENT_RESULTS = rows;
+  renderResults(rows);
 }
 
 async function boot() {
   $("#btnPrint").addEventListener("click", () => window.print());
-
+  $("#btnExportCsv").addEventListener("click", () => exportCsv(CURRENT_RESULTS));
+  $("#btnExportExcel").addEventListener("click", () => exportExcel(CURRENT_RESULTS));
+  $("#btnExportPdf").addEventListener("click", () => window.print());
+  $("#btnExportText").addEventListener("click", () => exportText(CURRENT_RESULTS));
+  
   $("#stationId").addEventListener("change", () => {
     if (!META) return;
     setApparatusOptions(META, $("#stationId").value);
@@ -254,6 +260,35 @@ async function boot() {
     }
   });
 
+ $("#btnSaveTemplate").addEventListener("click", () => {
+    const name = ($("#templateName").value || "").trim();
+    if (!name) return toast("Template name required");
+    const templates = loadTemplates();
+    const id = safeUuid();
+    templates.push({ id, name, ...currentFilters() });
+    saveTemplates(templates);
+    $("#templateName").value = "";
+    refreshTemplateOptions();
+    toast("Template saved");
+  });
+
+  $("#btnDeleteTemplate").addEventListener("click", () => {
+    const selected = $("#templateSelect").value;
+    if (!selected) return toast("Select a template");
+    const templates = loadTemplates().filter((t) => t.id !== selected);
+    saveTemplates(templates);
+    refreshTemplateOptions();
+    toast("Template deleted");
+  });
+
+  $("#templateSelect").addEventListener("change", () => {
+    const selected = $("#templateSelect").value;
+    if (!selected) return;
+    const template = loadTemplates().find((t) => t.id === selected);
+    applyTemplate(template);
+    toast("Template loaded");
+  });
+
   // defaults
   $("#to").value = ymdTodayLocal();
   const d = new Date();
@@ -263,6 +298,7 @@ async function boot() {
 
   try {
     await loadMeta();
+    refreshTemplateOptions();
     toast("Loaded");
   } catch (err) {
     toast(err.message, 3200);
@@ -270,3 +306,85 @@ async function boot() {
 }
 
 document.addEventListener("DOMContentLoaded", boot);
+
+function downloadBlob(data, filename, type) {
+  const blob = new Blob([data], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportCsv(rows) {
+  if (!rows.length) return toast("No data to export");
+  const headers = ["Timestamp", "Station", "Apparatus", "Category", "Submitter", "Summary"];
+  const lines = [
+    headers.join(","),
+    ...rows.map((r) =>
+      [
+        fmtLocal(r.timestamp),
+        r.stationId || "",
+        r.apparatusId || "",
+        r.category || "",
+        r.submitter || "",
+        String(r.summary || "").replaceAll('"', '""')
+      ]
+        .map((cell) => `"${String(cell).replaceAll('"', '""')}"`)
+        .join(",")
+    )
+  ];
+  downloadBlob(lines.join("\n"), "dfd-report.csv", "text/csv;charset=utf-8;");
+}
+
+function exportExcel(rows) {
+  if (!rows.length) return toast("No data to export");
+  const tableRows = rows
+    .map(
+      (r) => `
+      <tr>
+        <td>${escapeHtml(fmtLocal(r.timestamp))}</td>
+        <td>${escapeHtml(r.stationId || "")}</td>
+        <td>${escapeHtml(r.apparatusId || "")}</td>
+        <td>${escapeHtml(r.category || "")}</td>
+        <td>${escapeHtml(r.submitter || "")}</td>
+        <td>${escapeHtml(String(r.summary || ""))}</td>
+      </tr>`
+    )
+    .join("");
+  const html = `
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Station</th>
+          <th>Apparatus</th>
+          <th>Category</th>
+          <th>Submitter</th>
+          <th>Summary</th>
+        </tr>
+      </thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+  `;
+  downloadBlob(html, "dfd-report.xls", "application/vnd.ms-excel");
+}
+
+function exportText(rows) {
+  if (!rows.length) return toast("No data to export");
+  const lines = rows.map(
+    (r) =>
+      [
+        fmtLocal(r.timestamp),
+        r.stationId || "",
+        r.apparatusId || "",
+        r.category || "",
+        r.submitter || "",
+        String(r.summary || "")
+      ].join(" | ")
+  );
+  downloadBlob(lines.join("\n"), "dfd-report.txt", "text/plain;charset=utf-8;");
+}
