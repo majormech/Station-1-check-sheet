@@ -183,6 +183,23 @@ var DRUG_THRESHOLDS = {
   PRIMARY_14: 14
 };
 
+function getAllSearchCategories_() {
+  return [
+    "apparatusDaily",
+    "medicalDaily",
+    "scbaWeekly",
+    "pumpWeekly",
+    "aerialWeekly",
+    "sawWeekly",
+    "batteriesWeekly",
+    "weeklyCheck",
+    "oosUnit",
+    "oosEquipment",
+    "issues",
+    "medAlerts"
+  ];
+}
+
 /******************************************************
  * WEB APP — JSON ONLY
  ******************************************************/
@@ -274,23 +291,6 @@ function doGet(e) {
         }
       });
     }
-
-function getAllSearchCategories_() {
-  return [
-    "apparatusDaily",
-    "medicalDaily",
-    "scbaWeekly",
-    "pumpWeekly",
-    "aerialWeekly",
-    "sawWeekly",
-    "batteriesWeekly",
-    "weeklyCheck",
-    "oosUnit",
-    "oosEquipment",
-    "issues",
-    "medAlerts"
-  ];
-}
 
     // ✅ SEARCH across history — GET
     // GET /api?action=searchRecords&category=...&stationId=...&apparatusId=...&q=...&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=200
