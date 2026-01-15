@@ -29,6 +29,7 @@
     }
     .btn.primary{background:#111;color:#fff;border-color:#111}
     .btn:active{transform:translateY(1px)}
+    .btn.ghost{background:#f8f9fb;color:#111}
     .card{
       background:var(--card);
       border:1px solid var(--line);
@@ -44,7 +45,9 @@
     }
     input[type="date"]{min-width:150px}
     input[type="text"]{min-width:220px;flex:1 1 220px}
-
+    .stack{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+    .divider{height:1px;background:var(--line);margin:12px 0}
+    
     table{
       width:100%;
       border-collapse:collapse;
@@ -184,9 +187,34 @@
         <button class="btn primary" id="btnSearch">Search</button>
       </div>
 
-      <div class="note" style="margin-top:10px">
-        Tip: searches scan the full row contents, so “Knox”, “radios”, “4500”, “engine hours”, names, notes, etc. will match.
+       <div class="divider"></div>
+
+      <div class="stack">
+        <div style="min-width:220px">
+          <label for="templateSelect">Report Templates</label><br/>
+          <select id="templateSelect">
+            <option value="">Select template…</option>
+          </select>
+        </div>
+        <div style="min-width:220px">
+          <label for="templateName">Save current filters as…</label><br/>
+          <input id="templateName" type="text" placeholder="Daily checks last 30 days" />
+        </div>
+        <button class="btn" id="btnSaveTemplate">Save Template</button>
+        <button class="btn ghost" id="btnDeleteTemplate">Delete Template</button>
       </div>
+
+      <div class="divider"></div>
+
+      <div class="stack">
+        <div class="note" style="flex:1 1 auto">
+          Tip: searches scan the full row contents, so “Knox”, “radios”, “4500”, “engine hours”, names, notes, etc. will match.
+        </div>
+        <button class="btn" id="btnExportCsv">Export CSV</button>
+        <button class="btn" id="btnExportExcel">Export Excel</button>
+        <button class="btn" id="btnExportPdf">Export PDF</button>
+        <button class="btn" id="btnExportText">Export Text</button>
+            </div>
     </section>
 
     <section class="card">
