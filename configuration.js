@@ -84,7 +84,8 @@ function renderWeeklyConfig(cfg) {
     { key: "pumpWeekly", label: "Pump Weekly" },
     { key: "aerialWeekly", label: "Aerial Weekly" },
     { key: "sawWeekly", label: "Saws Weekly" },
-    { key: "batteriesWeekly", label: "Batteries Weekly" }
+    { key: "batteriesWeekly", label: "Batteries Weekly" },
+    { key: "weeklyCheck", label: "Weekly Check" }
   ];
 
   for (const it of items) {
@@ -129,6 +130,14 @@ function normalizeEmails(text) {
     .join("\n");
 }
 
+let EMAIL_CONFIG = {
+  issuesByStation: {},
+  drugsAllByStation: {},
+  drugsPrimaryByStation: {},
+  masterIssues: []
+};
+let STATION_LIST = [];
+
 /* ---------- Loaders ---------- */
 async function loadWeeklyConfig() {
   // ✅ Preferred: weekly config comes from getAdminStatus (you already have it)
@@ -151,75 +160,115 @@ async function loadWeeklyConfig() {
   toast("Weekly config not found in backend", 3200);
 }
 
-async function loadEmailConfig() {
-  const issuesBox = $("#issuesEmails");
-  const drugBox = $("#drugEmails");
-  if (!issuesBox || !drugBox) return;
+async function loadStations() {
+  const res = await apiGet({ action: "getConfig" });
+  STATION_LIST = res?.config?.stations || [];
 
-  // ✅ Try dedicated endpoint if you have it
-  const res = await apiGetSoft({ action: "getEmailRecipients" });
-  if (res?.emails) {
-    issuesBox.value = (res.emails.issues || []).join("\n");
-    drugBox.value = (res.emails.drugExp || []).join("\n");
-    return;
-  }
-
-  // Optional fallback: if you decided to embed emails in getAdminStatus
-  const admin = await apiGet({ action: "getAdminStatus" });
-  const emails = admin?.status?.emails || admin?.status?.emailRecipients;
-  if (emails) {
-    issuesBox.value = (emails.issues || emails.issuesEmails || []).join("\n");
-    drugBox.value   = (emails.drugExp || emails.drugEmails || []).join("\n");
-    return;
-  }
-
-  issuesBox.value = "";
-  drugBox.value = "";
-  toast("Emails endpoint not installed (add getEmailRecipients)", 3600);
+  const sel = $("#emailStation");
+  if (!sel) return;
+  sel.innerHTML = STATION_LIST.map(st =>
+    `<option value="${st.stationId}">${st.stationName}</option>`
+  ).join("");
 }
 
-/* ---------- Saves ---------- */
-async function saveEmails(kind) {
+function currentEmailStation() {
+  return ($("#emailStation")?.value || "").trim();
+}
+
+function renderEmailConfigForStation(stationId) {
+  const issuesBox = $("#issuesEmails");
+  const drugAllBox = $("#drugAllEmails");
+  const drugPrimaryBox = $("#drugPrimaryEmails");
+  const masterBox = $("#masterIssuesEmails");
+  if (!issuesBox || !drugAllBox || !drugPrimaryBox || !masterBox) return;
+
+  issuesBox.value = (EMAIL_CONFIG.issuesByStation?.[stationId] || []).join("\n");
+  drugAllBox.value = (EMAIL_CONFIG.drugsAllByStation?.[stationId] || []).join("\n");
+  drugPrimaryBox.value = (EMAIL_CONFIG.drugsPrimaryByStation?.[stationId] || []).join("\n");
+  masterBox.value = (EMAIL_CONFIG.masterIssues || []).join("\n");
+}
+
+async function loadEmailConfig() {
+  const res = await apiGet({ action: "getEmailConfig" });
+  EMAIL_CONFIG = res?.emails || EMAIL_CONFIG;
+  renderEmailConfigForStation(currentEmailStation());
+}
+
+async function saveEmailConfigForStation() {
+  const stationId = currentEmailStation();
+  if (!stationId) throw new Error("Select a station.");
+
   const user = adminName();
+  const issues = normalizeEmails($("#issuesEmails")?.value || "");
+  const drugAll = normalizeEmails($("#drugAllEmails")?.value || "");
+  const drugPrimary = normalizeEmails($("#drugPrimaryEmails")?.value || "");
 
-  const issuesText = normalizeEmails($("#issuesEmails")?.value || "");
-  const drugText = normalizeEmails($("#drugEmails")?.value || "");
-
-  const issues = issuesText ? issuesText.split("\n") : [];
-  const drugExp = drugText ? drugText.split("\n") : [];
-
-  // Requires Code.gs to implement setEmailRecipients
   await apiPost({
-    action: "setEmailRecipients",
+    action: "setEmailConfig",
     user,
-    emails: { issues, drugExp }
+    stationId,
+    kind: "issuesByStation",
+    emails: issues ? issues.split("\n") : []
   });
 
-  toast("Email lists saved");
+  await apiPost({
+    action: "setEmailConfig",
+    user,
+    stationId,
+    kind: "drugsAllByStation",
+    emails: drugAll ? drugAll.split("\n") : []
+  });
+
+  await apiPost({
+    action: "setEmailConfig",
+    user,
+    stationId,
+    kind: "drugsPrimaryByStation",
+    emails: drugPrimary ? drugPrimary.split("\n") : []
+  });
+
+  await loadEmailConfig();
+  toast("Station email lists saved");
+}
+
+async function saveMasterIssuesEmails() {
+  const user = adminName();
+  const masterText = normalizeEmails($("#masterIssuesEmails")?.value || "");
+  await apiPost({
+    action: "setEmailConfig",
+    user,
+    stationId: "MASTER",
+    kind: "issuesByStation",
+    emails: masterText ? masterText.split("\n") : []
+  });
+  await loadEmailConfig();
+  toast("Master issues list saved");
 }
 
 /* ---------- Boot ---------- */
-async function reloadCurrent() {
-  const mode = ($("#configType")?.value || "weekly").trim();
-  showSection(mode);
-
-  if (mode === "weekly") await loadWeeklyConfig();
-  if (mode === "email") await loadEmailConfig();
-}
-
 async function boot() {
-  $("#configType")?.addEventListener("change", async () => {
-    try { await reloadCurrent(); }
+  $("#btnWeeklyTab")?.addEventListener("click", () => showSection("weekly"));
+  $("#btnEmailTab")?.addEventListener("click", () => showSection("email"));
+  $("#emailStation")?.addEventListener("change", () => renderEmailConfigForStation(currentEmailStation()));
+
+  $("#btnSaveStationEmails")?.addEventListener("click", async () => {
+    try { await saveEmailConfigForStation(); }
     catch (e) { toast(e.message, 3200); }
   });
 
-  $("#btnSaveEmails")?.addEventListener("click", async () => {
-    try { await saveEmails(); }
+  $("#btnSaveMasterEmails")?.addEventListener("click", async () => {
+    try { await saveMasterIssuesEmails(); }
     catch (e) { toast(e.message, 3200); }
   });
 
   try {
-    await reloadCurrent();
+    await loadStations();
+    if ($("#emailStation") && !currentEmailStation() && STATION_LIST.length) {
+      $("#emailStation").value = STATION_LIST[0].stationId;
+    }
+    await loadWeeklyConfig();
+    await loadEmailConfig();
+    showSection("weekly");
     toast("Loaded");
   } catch (e) {
     toast(e.message, 3200);
