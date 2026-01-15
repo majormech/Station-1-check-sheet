@@ -33,6 +33,14 @@
       width:100%; padding:10px 12px; border-radius:12px;
       border:1px solid #d7dbe0; font:inherit; background:#fff;
     }
+    input[type="checkbox"]{ width:auto; }
+    .checkLabel{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      font-weight:700;
+    }
+    .failNoteWrap{ margin-top:6px; }
     textarea{min-height:70px; resize:vertical}
     .row{display:grid; gap:12px}
     @media (min-width:760px){ .row{grid-template-columns: 1fr 1fr} }
@@ -85,6 +93,13 @@
         <div>
           <label for="apparatus">Apparatus</label>
           <select id="apparatus"></select>
+        </div>
+      </div>
+
+      <div class="row" id="locationWrap" style="display:none">
+        <div>
+          <label for="location">Location</label>
+          <input id="location" placeholder="Where is it located?" />
         </div>
       </div>
 
