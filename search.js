@@ -180,9 +180,8 @@ function renderResults(rows) {
   }
 }
 
-/* IMPORTANT FIX:
-   Your Code.gs defines getSearchMeta under doPost(), not doGet().
-   So we must call POST /api {action:"getSearchMeta"}.
+/* IMPORTANT:
+   getSearchMeta is served from POST /api {action:"getSearchMeta"}.
 */
 async function loadMeta() {
   const res = await apiPost({ action: "getSearchMeta" });
