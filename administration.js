@@ -170,8 +170,8 @@ function pill(status, checkKey) {
   }
   const last = status?.last ? new Date(status.last) : null;
   const lastStr = last ? last.toLocaleString() : "—";
-  const cls = status?.ok ? "ok" : "issue";
-  const label = status?.ok ? "DONE" : "ISSUE REPORTED";
+  const cls = status?.ok ? "ok" : "not-done";
+  const label = status?.ok ? "DONE" : "NOT DONE";
   return `
     <button class="pill-button" type="button" data-check="${escapeHtml(checkKey)}">
       <span class="pill ${cls}">${label}</span>
@@ -207,7 +207,7 @@ function showCheckDetail_(row, categoryKey) {
 
   const check = row?.checks?.[categoryKey] || null;
   const label = CHECK_LABELS[categoryKey] || categoryKey;
-  const statusLabel = check?.ok ? "DONE" : "ISSUE REPORTED";
+  const statusLabel = check?.ok ? "DONE" : "NOT DONE";
   const lastRecord = check?.lastRecord || null;
   const createdAt = lastRecord?.createdAt ? new Date(lastRecord.createdAt).toLocaleString() : "—";
   const hasRecord = Boolean(lastRecord);
