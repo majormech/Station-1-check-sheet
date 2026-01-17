@@ -639,15 +639,34 @@ function computeWeeklyDueStart_(now, weekdayName) {
 
 async function statusFromChecks_(db, unit, category, okIfAfterDate) {
   const res = await db
-    .prepare("SELECT created_at FROM checks WHERE apparatus_id = ? AND category = ? ORDER BY created_at DESC LIMIT 1")
+    .prepare("SELECT * FROM checks WHERE apparatus_id = ? AND category = ? ORDER BY created_at DESC LIMIT 1")
     .bind(unit, category)
     .first();
 
-  if (!res?.created_at) return { ok: false, last: null };
+  if (!res?.created_at) return { ok: false, last: null, lastRecord: null };
   const last = new Date(res.created_at);
-  if (isNaN(last.getTime())) return { ok: false, last: null };
+  if (isNaN(last.getTime())) return { ok: false, last: null, lastRecord: null };
   const ok = okIfAfterDate ? last.getTime() >= okIfAfterDate.getTime() : true;
-  return { ok, last: last.toISOString() };
+  return {
+    ok,
+    last: last.toISOString(),
+    lastRecord: {
+      id: res.id,
+      createdAt: res.created_at,
+      submitter: res.submitter,
+      summary: res.summary,
+      payload: safeJsonParse_(res.payload_json)
+    }
+  };
+}
+
+function safeJsonParse_(value) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
 }
 
 function normalizeIssues_(rows) {
@@ -708,6 +727,7 @@ function buildCheckSummary_(checkType, payload) {
 
 async function searchRecords_(db, params) {
   const { category, stationId, apparatusId, q, from, to, limit } = params;
+  const bounds = normalizeDateBounds_(from, to);
   const cap = Math.min(Math.max(Number(limit) || 200, 1), 1000);
   const matchStation = stationId && stationId !== "all" ? stationId : null;
   const matchApparatus = apparatusId && apparatusId !== "all" ? apparatusId : null;
@@ -730,7 +750,14 @@ async function searchRecords_(db, params) {
 
   for (const cat of categories) {
     if (cat === "issues") {
-      const rows = await searchIssues_(db, { matchStation, matchApparatus, q, from, to, limit: cap });
+      const rows = await searchIssues_(db, {
+        matchStation,
+        matchApparatus,
+        q,
+        from: bounds.from,
+        to: bounds.to,
+        limit: cap
+      });
       results.push(...rows.map((row) => ({
         timestamp: row.created_at,
         stationId: row.station_id,
@@ -740,7 +767,14 @@ async function searchRecords_(db, params) {
         summary: row.issue_text
       })));
     } else if (cat === "medAlerts") {
-      const rows = await searchMedAlerts_(db, { matchStation, matchApparatus, q, from, to, limit: cap });
+      const rows = await searchMedAlerts_(db, {
+        matchStation,
+        matchApparatus,
+        q,
+        from: bounds.from,
+        to: bounds.to,
+        limit: cap
+      });
       results.push(...rows.map((row) => ({
         timestamp: row.created_at,
         stationId: row.station_id,
@@ -750,7 +784,14 @@ async function searchRecords_(db, params) {
         summary: row.note || "Med alert"
       })));
     } else {
-      const rows = await searchChecks_(db, cat, { matchStation, matchApparatus, q, from, to, limit: cap });
+      const rows = await searchChecks_(db, cat, {
+        matchStation,
+        matchApparatus,
+        q,
+        from: bounds.from,
+        to: bounds.to,
+        limit: cap
+      });
       results.push(...rows.map((row) => ({
         timestamp: row.created_at,
         stationId: row.station_id,
@@ -763,6 +804,20 @@ async function searchRecords_(db, params) {
     }
 
   return results.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, cap);
+}
+
+function normalizeDateBounds_(from, to) {
+  const normalize = (value, fallbackTime) => {
+    if (!value) return "";
+    const trimmed = String(value).trim();
+    if (!trimmed) return "";
+    if (trimmed.includes("T")) return trimmed;
+    return `${trimmed}${fallbackTime}`;
+  };
+  return {
+    from: normalize(from, "T00:00:00.000Z"),
+    to: normalize(to, "T23:59:59.999Z")
+  };
 }
 
 async function searchChecks_(db, category, filters) {
@@ -786,8 +841,8 @@ async function searchChecks_(db, category, filters) {
     params.push(to);
   }
   if (q) {
-    clauses.push("summary LIKE ?");
-    params.push(`%${q}%`);
+    clauses.push("(summary LIKE ? OR payload_json LIKE ? OR submitter LIKE ?)");
+    params.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
   const sql = `SELECT * FROM checks WHERE ${clauses.join(" AND ")} ORDER BY created_at DESC LIMIT ?`;
   params.push(limit);
@@ -816,8 +871,8 @@ async function searchIssues_(db, filters) {
     params.push(to);
   }
   if (q) {
-    clauses.push("issue_text LIKE ?");
-    params.push(`%${q}%`);
+    clauses.push("(issue_text LIKE ? OR bullet_note LIKE ? OR created_by LIKE ?)");
+    params.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const rows = await db.prepare(`SELECT * FROM issues ${where} ORDER BY created_at DESC LIMIT ?`).bind(...params, limit).all();
@@ -845,8 +900,8 @@ async function searchMedAlerts_(db, filters) {
     params.push(to);
   }
   if (q) {
-    clauses.push("note LIKE ?");
-    params.push(`%${q}%`);
+    clauses.push("(note LIKE ? OR items_json LIKE ? OR submitter LIKE ?)");
+    params.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const rows = await db.prepare(`SELECT * FROM med_email_alerts ${where} ORDER BY created_at DESC LIMIT ?`).bind(...params, limit).all();
