@@ -164,15 +164,84 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
-function pill(okOrNull, lastIso) {
-  if (okOrNull === null) {
+function pill(status, checkKey) {
+  if (status === null) {
     return `<span class="pill na">N/A</span><span class="sub">—</span>`;
   }
-  const last = lastIso ? new Date(lastIso) : null;
+  const last = status?.last ? new Date(status.last) : null;
   const lastStr = last ? last.toLocaleString() : "—";
-  const cls = okOrNull ? "ok" : "bad";
-  const label = okOrNull ? "DONE" : "NOT DONE";
-  return `<span class="pill ${cls}">${label}</span><span class="sub">Last: ${escapeHtml(lastStr)}</span>`;
+  const cls = status?.ok ? "ok" : "issue";
+  const label = status?.ok ? "DONE" : "ISSUE REPORTED";
+  return `
+    <button class="pill-button" type="button" data-check="${escapeHtml(checkKey)}">
+      <span class="pill ${cls}">${label}</span>
+      <span class="sub">Last: ${escapeHtml(lastStr)}</span>
+    </button>
+  `;
+}
+
+const CHECK_LABELS = {
+  apparatusDaily: "Apparatus Daily",
+  medicalDaily: "Medical Daily",
+  scbaWeekly: "SCBA Weekly",
+  pumpWeekly: "Pump Weekly",
+  aerialWeekly: "Aerial Weekly",
+  sawWeekly: "Saws Weekly",
+  batteriesWeekly: "Batteries Weekly",
+  weeklyCheck: "Weekly Check",
+};
+
+function renderPayload_(payload) {
+  if (!payload) return "—";
+  try {
+    return JSON.stringify(payload, null, 2);
+  } catch {
+    return "—";
+  }
+}
+
+function showCheckDetail_(row, categoryKey) {
+  const modal = $("#checkDetailModal");
+  const body = $("#checkDetailBody");
+  if (!modal || !body) return;
+
+  const check = row?.checks?.[categoryKey] || null;
+  const label = CHECK_LABELS[categoryKey] || categoryKey;
+  const statusLabel = check?.ok ? "DONE" : "ISSUE REPORTED";
+  const lastRecord = check?.lastRecord || null;
+  const createdAt = lastRecord?.createdAt ? new Date(lastRecord.createdAt).toLocaleString() : "—";
+  const hasRecord = Boolean(lastRecord);
+
+  body.innerHTML = `
+    <div class="detail-grid">
+      <div><b>Station:</b> ${escapeHtml(row?.stationName || ("Station " + row?.stationId))}</div>
+      <div><b>Apparatus:</b> ${escapeHtml(row?.apparatusId)}</div>
+      <div><b>Check:</b> ${escapeHtml(label)}</div>
+      <div><b>Status:</b> ${escapeHtml(statusLabel)}</div>
+      <div><b>Last Submitted:</b> ${escapeHtml(createdAt)}</div>
+      <div><b>Submitter:</b> ${escapeHtml(lastRecord?.submitter || "—")}</div>
+      <div class="detail-span"><b>Summary:</b> ${escapeHtml(lastRecord?.summary || "—")}</div>
+    </div>
+    <div style="margin-top:12px">
+      ${hasRecord
+        ? `<b>Payload</b><pre class="detail-pre">${escapeHtml(renderPayload_(lastRecord?.payload))}</pre>`
+        : `<div class="note">No submissions yet for this check.</div>`}
+    </div>
+  `;
+
+  modal.setAttribute("aria-hidden", "false");
+  modal.classList.add("show");
+}
+
+function closeCheckDetail_() {
+  const modal = $("#checkDetailModal");
+  if (!modal) return;
+  modal.setAttribute("aria-hidden", "true");
+  modal.classList.remove("show");
+}
+
+function handleModalKeydown_(event) {
+  if (event.key === "Escape") closeCheckDetail_();
 }
 
 /* ---------- Status ---------- */
@@ -200,23 +269,25 @@ function renderStatus(status) {
     const c = r.checks || {};
     const req = requirementsFor(r.apparatusId);
 
-    const cell = (required, obj) => {
+    const cell = (required, obj, key) => {
       if (!required) return pill(null);
-      return pill(!!obj?.ok, obj?.last);
+      return pill(obj, key);
     };
 
     const tr = document.createElement("tr");
+    tr.dataset.stationId = String(r.stationId || "");
+    tr.dataset.apparatusId = String(r.apparatusId || "");
     tr.innerHTML = `
       <td data-label="Station">${escapeHtml(r.stationName || ("Station " + r.stationId))}</td>
       <td data-label="Apparatus">${escapeHtml(r.apparatusId)}</td>
-      <td data-label="Apparatus Daily">${cell(req.apparatusDaily, c.apparatusDaily)}</td>
-      <td data-label="Medical Daily">${cell(req.medicalDaily, c.medicalDaily)}</td>
-      <td data-label="SCBA Weekly">${cell(req.scbaWeekly, c.scbaWeekly)}</td>
-      <td data-label="Pump Weekly">${cell(req.pumpWeekly, c.pumpWeekly)}</td>
-      <td data-label="Aerial Weekly">${cell(req.aerialWeekly, c.aerialWeekly)}</td>
-      <td data-label="Saws Weekly">${cell(req.sawWeekly, c.sawWeekly)}</td>
-      <td data-label="Batteries Weekly">${cell(req.batteriesWeekly, c.batteriesWeekly)}</td>
-      <td data-label="Weekly Check">${cell(req.weeklyCheck, c.weeklyCheck)}</td>
+      <td data-label="Apparatus Daily">${cell(req.apparatusDaily, c.apparatusDaily, "apparatusDaily")}</td>
+      <td data-label="Medical Daily">${cell(req.medicalDaily, c.medicalDaily, "medicalDaily")}</td>
+      <td data-label="SCBA Weekly">${cell(req.scbaWeekly, c.scbaWeekly, "scbaWeekly")}</td>
+      <td data-label="Pump Weekly">${cell(req.pumpWeekly, c.pumpWeekly, "pumpWeekly")}</td>
+      <td data-label="Aerial Weekly">${cell(req.aerialWeekly, c.aerialWeekly, "aerialWeekly")}</td>
+      <td data-label="Saws Weekly">${cell(req.sawWeekly, c.sawWeekly, "sawWeekly")}</td>
+      <td data-label="Batteries Weekly">${cell(req.batteriesWeekly, c.batteriesWeekly, "batteriesWeekly")}</td>
+      <td data-label="Weekly Check">${cell(req.weeklyCheck, c.weeklyCheck, "weeklyCheck")}</td>
     `;
     tb.appendChild(tr);
   }
@@ -522,6 +593,32 @@ async function boot() {
       toast(err.message, 3200);
     }
   });
+
+  $("#statusTable")?.addEventListener("click", (event) => {
+    const button = event.target.closest(".pill-button");
+    if (!button) return;
+
+    const tr = button.closest("tr");
+    const stationId = tr?.dataset?.stationId;
+    const apparatusId = tr?.dataset?.apparatusId;
+    const categoryKey = button.dataset.check;
+    if (!stationId || !apparatusId || !categoryKey) return;
+
+    const row = LAST_ADMIN_STATUS?.rows?.find(
+      (item) =>
+        String(item.stationId || "") === String(stationId) &&
+        String(item.apparatusId || "") === String(apparatusId)
+    );
+
+    if (!row) return;
+    showCheckDetail_(row, categoryKey);
+  });
+
+  $("#checkDetailClose")?.addEventListener("click", () => closeCheckDetail_());
+  $("#checkDetailModal")?.addEventListener("click", (event) => {
+    if (event.target?.id === "checkDetailModal") closeCheckDetail_();
+  });
+  document.addEventListener("keydown", handleModalKeydown_);
 
   try {
     await refreshAll();
