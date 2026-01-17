@@ -245,6 +245,29 @@ async function saveMasterIssuesEmails() {
   toast("Master issues list saved");
 }
 
+async function runMigration(fileName, label) {
+  const user = adminName();
+  const ok = window.confirm(`Run migration "${label}" now? This cannot be undone.`);
+  if (!ok) return;
+
+  const res = await fetch(`/migrations/${fileName}`, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`Unable to load ${fileName} (${res.status})`);
+  }
+
+  const sql = await res.text();
+  if (!sql.trim()) throw new Error(`Migration ${fileName} is empty.`);
+
+  await apiPost({
+    action: "runMigration",
+    user,
+    migration: fileName,
+    sql
+  });
+
+  toast(`${label} migration executed`);
+}
+
 /* ---------- Boot ---------- */
 async function boot() {
   $("#btnWeeklyTab")?.addEventListener("click", () => showSection("weekly"));
@@ -260,6 +283,17 @@ async function boot() {
     try { await saveMasterIssuesEmails(); }
     catch (e) { toast(e.message, 3200); }
   });
+
+    $("#btnRunSchemaMigration")?.addEventListener("click", async () => {
+    try { await runMigration("001_d1_schema.sql", "D1 schema"); }
+    catch (e) { toast(e.message, 3200); }
+  });
+
+  $("#btnRunBackfillMigration")?.addEventListener("click", async () => {
+    try { await runMigration("002_backfill_checks_summary.sql", "Backfill checks summary"); }
+    catch (e) { toast(e.message, 3200); }
+  });
+
 
   try {
     await loadStations();
