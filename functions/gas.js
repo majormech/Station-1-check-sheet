@@ -1,3 +1,4 @@
+// Legacy GAS proxy (used only for backup sync/testing).
 export async function onRequest(context) {
   const { request } = context;
   const url = new URL(request.url);
