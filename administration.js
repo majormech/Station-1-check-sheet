@@ -257,6 +257,111 @@ function renderPayload_(payload) {
   }
 }
 
+const APPARATUS_DAILY_LABELS = {
+  knox: "Knox Box Keys",
+  radios: "Portable Radios (4)",
+  lights: "Lights",
+  scba: "SCBA (4)",
+  spareBottles: "Spare Bottles",
+  rit: "RIT Pack",
+  flashlights: "Flash Lights",
+  tic: "TIC (4)",
+  gasMonitor: "Gas Monitor",
+  handTools: "Hand Tools",
+  hydraRam: "Hydra-Ram",
+  groundLadders: "Ground Ladders",
+  passports: "Passports/Shields",
+  extricationTools: "Extrication Equipment",
+};
+
+const WEEKLY_CHECK_LABELS = {
+  lightsCheck: "Lights Check",
+  generatorCheck: "Generator Ran / Working",
+  smallEnginesCheck: "Small Engines Fuel Level / Ran",
+  batteriesCheck: "All Batteries Charged",
+  boatFuelCheck: "Engine Fuel Level / Ran",
+};
+
+function issueHighlightClass_(iss) {
+  const computedStatus = computedIssueStatus_(iss);
+  if (iss.acknowledged) return "hl-ack";
+  if (computedStatus === "OLD") return "hl-old";
+  return "hl-new";
+}
+
+function issuesForApparatus_(apparatusId, stationId) {
+  const ap = String(apparatusId || "").trim();
+  const st = String(stationId || "").trim();
+  return (LAST_ADMIN_ISSUES || []).filter((iss) => {
+    const status = String(iss.status || "").toUpperCase();
+    if (status === "RESOLVED") return false;
+    return (
+      String(iss.apparatusId || "").trim() === ap &&
+      (!st || String(iss.stationId || "").trim() === st)
+    );
+  });
+}
+
+function collectFailedItems_(categoryKey, payload) {
+  if (!payload || typeof payload !== "object") return [];
+  const items = [];
+
+  const pushFail = (label, notes) => {
+    if (!label) return;
+    const noteText = String(notes || "").trim();
+    if (!noteText) return;
+    items.push({ label, notes: noteText });
+  };
+
+  if (categoryKey === "apparatusDaily") {
+    Object.entries(APPARATUS_DAILY_LABELS).forEach(([key, label]) => {
+      const entry = payload[key];
+      if (entry?.passFail === "Fail") pushFail(label, entry.notes);
+    });
+    return items;
+  }
+
+  if (categoryKey === "medicalDaily") {
+    if (payload.airwayPassFail === "Fail") pushFail("Airway Equipment", payload.airwayNotes);
+    return items;
+  }
+
+  if (categoryKey === "scbaWeekly") {
+    (payload.entries || []).forEach((entry, idx) => {
+      if (entry?.passFail === "Fail") {
+        pushFail(entry?.label || `SCBA ${idx + 1}`, entry?.notes);
+      }
+    });
+    return items;
+  }
+
+  if (categoryKey === "pumpWeekly") {
+    if (String(payload.overall || "").toLowerCase() === "fail") {
+      pushFail("Pump Overall", payload.notes);
+    }
+    return items;
+  }
+
+  if (categoryKey === "aerialWeekly") {
+    if (String(payload.overall || "").toLowerCase() === "fail") {
+      pushFail("Aerial Overall", payload.notes);
+    }
+    return items;
+  }
+
+  if (categoryKey === "weeklyCheck") {
+    Object.entries(WEEKLY_CHECK_LABELS).forEach(([key, label]) => {
+      if (String(payload[key] || "").toLowerCase() === "fail") {
+        const noteKey = key.replace("Check", "Notes");
+        pushFail(label, payload[noteKey]);
+      }
+    });
+    return items;
+  }
+
+  return items;
+}
+
 function showCheckDetail_(row, categoryKey) {
   const modal = $("#checkDetailModal");
   const body = $("#checkDetailBody");
@@ -268,6 +373,8 @@ function showCheckDetail_(row, categoryKey) {
   const lastRecord = check?.lastRecord || null;
   const createdAt = lastRecord?.createdAt ? new Date(lastRecord.createdAt).toLocaleString() : "—";
   const hasRecord = Boolean(lastRecord);
+  const apparatusIssues = issuesForApparatus_(row?.apparatusId, row?.stationId);
+  const failedItems = collectFailedItems_(categoryKey, lastRecord?.payload || null);
 
   body.innerHTML = `
     <div class="detail-grid">
@@ -275,10 +382,49 @@ function showCheckDetail_(row, categoryKey) {
       <div><b>Apparatus:</b> ${escapeHtml(row?.apparatusId)}</div>
       <div><b>Check:</b> ${escapeHtml(label)}</div>
       <div><b>Status:</b> ${escapeHtml(statusLabel)}</div>
+      <div class="detail-span">
+        <b>Issues:</b>
+        ${apparatusIssues.length
+          ? `<div class="detail-issues">
+              ${apparatusIssues
+                .map((iss) => {
+                  const computedStatus = computedIssueStatus_(iss);
+                  const ack = !!iss.acknowledged;
+                  const statusText = ack ? `ACK • ${computedStatus}` : computedStatus;
+                  return `
+                    <div class="detail-issue ${issueHighlightClass_(iss)}">
+                      <div><b>${escapeHtml(statusText)}</b> — ${escapeHtml(iss.issueText || "")}</div>
+                      ${iss.bulletNote ? `<div class="meta">Note: ${escapeHtml(iss.bulletNote)}</div>` : ``}
+                    </div>
+                  `;
+                })
+                .join("")}
+            </div>`
+          : `<span class="note">No active issues for this apparatus.</span>`}
+      </div>
       <div><b>Last Submitted:</b> ${escapeHtml(createdAt)}</div>
       <div><b>Submitter:</b> ${escapeHtml(lastRecord?.submitter || "—")}</div>
       <div class="detail-span"><b>Summary:</b> ${escapeHtml(lastRecord?.summary || "—")}</div>
     </div>
+    ${failedItems.length
+      ? `
+        <div style="margin-top:12px">
+          <b>Failed Items (notes required)</b>
+          <div class="detail-fails">
+            ${failedItems
+              .map(
+                (item) => `
+                  <div class="fail-item">
+                    <div><b>${escapeHtml(item.label)}</b></div>
+                    <div class="meta">${escapeHtml(item.notes)}</div>
+                  </div>
+                `
+              )
+              .join("")}
+          </div>
+        </div>
+      `
+      : ``}
     <div style="margin-top:12px">
       ${hasRecord
         ? `<b>Payload</b><div class="payload-container">${renderPayload_(lastRecord?.payload)}</div>`
@@ -303,6 +449,7 @@ function handleModalKeydown_(event) {
 
 /* ---------- Status ---------- */
 let LAST_ADMIN_STATUS = null;
+let LAST_ADMIN_ISSUES = [];
 
 function renderStatus(status) {
   const tb = $("#statusTable tbody");
@@ -485,204 +632,4 @@ function renderIssues(issues) {
 
   box.innerHTML = "";
 
-  const active = (issues || []).filter((x) => String(x.status || "").toUpperCase() !== "RESOLVED");
-  if (!active.length) {
-    box.innerHTML = `<div class="note">No active issues.</div>`;
-    return;
-  }
-
-  const grouped = groupByApparatus_(active);
-
-  for (const [apparatusId, unitIssuesRaw] of grouped) {
-    const unitIssues = [...unitIssuesRaw].sort((a, b) => {
-      const aAck = !!a.acknowledged,
-        bAck = !!b.acknowledged;
-      if (aAck !== bAck) return aAck ? 1 : -1;
-
-      const aSt = computedIssueStatus_(a);
-      const bSt = computedIssueStatus_(b);
-      const rank = (st) => (st === "OLD" ? 0 : 1);
-      if (rank(aSt) !== rank(bSt)) return rank(aSt) - rank(bSt);
-
-      const aT = new Date(a.lastUpdatedAt || a.createdAt || 0).getTime();
-      const bT = new Date(b.lastUpdatedAt || b.createdAt || 0).getTime();
-      return bT - aT;
-    });
-
-    const sum = summarizeUnitIssues_(unitIssues);
-
-    const details = document.createElement("details");
-    details.className = "unit-group";
-    details.open = sum.newCt + sum.oldCt > 0;
-
-    details.innerHTML = `
-      <summary class="unit-summary">
-        <div class="unit-left">
-          <span class="unit-title">${escapeHtml(apparatusId)}</span>
-          <span class="unit-meta">
-            ${sum.newCt ? `<span class="badge b-new">${sum.newCt} new</span>` : ``}
-            ${sum.oldCt ? `<span class="badge b-old">${sum.oldCt} old</span>` : ``}
-            ${sum.ackCt ? `<span class="badge b-ack">${sum.ackCt} ack</span>` : ``}
-          </span>
-        </div>
-        <div class="unit-count">${sum.total}</div>
-      </summary>
-      <div class="unit-body"></div>
-    `;
-
-    const body = details.querySelector(".unit-body");
-    for (const iss of unitIssues) body.appendChild(renderIssueRow_(iss));
-    box.appendChild(details);
-  }
-}
-
-/* ---------- Filtered Issues Title ---------- */
-function stationLabel_(id) {
-  if (id === "all") return "Overall (All Stations)";
-  return `Station ${id}`;
-}
-
-function setIssuesTitle_() {
-  const f = selectedStationFilter();
-  const el = $("#issuesTitle");
-  if (!el) return;
-  el.textContent = f === "all" ? "Active Issues (All Stations)" : `Active Issues (${stationLabel_(f)})`;
-}
-
-/* ---------- Refresh ---------- */
-function apparatusSetForStation_(stationId) {
-  const set = new Set();
-  const rows = LAST_ADMIN_STATUS?.rows || [];
-  for (const r of rows) {
-    if (String(r.stationId) === String(stationId)) set.add(String(r.apparatusId || "").trim());
-  }
-  return set;
-}
-
-async function fetchIssuesForStation_(stationId) {
-  const res = await apiGet({
-    action: "listIssues",
-    stationId: String(stationId),
-    includeCleared: "false",
-  });
-  return res.issues || [];
-}
-
-function dedupeIssuesById_(issues) {
-  const map = new Map();
-  for (const iss of issues || []) {
-    const id = iss?.issueId || "";
-    if (!id) continue;
-
-    const prev = map.get(id);
-    if (!prev) {
-      map.set(id, iss);
-      continue;
-    }
-    const pT = new Date(prev.lastUpdatedAt || prev.createdAt || 0).getTime();
-    const nT = new Date(iss.lastUpdatedAt || iss.createdAt || 0).getTime();
-    if (nT >= pT) map.set(id, iss);
-  }
-  return Array.from(map.values());
-}
-
-async function refreshIssues() {
-  const f = selectedStationFilter();
-  let issues = [];
-
-  if (f === "all") {
-    const results = await Promise.all(
-      STATIONS.map((st) => fetchIssuesForStation_(st).catch(() => []))
-    );
-    issues = dedupeIssuesById_(results.flat());
-  } else {
-    issues = await fetchIssuesForStation_(f);
-  }
-
-  // Extra safety filter if station view is selected
-  if (f !== "all") {
-    const allowedUnits = apparatusSetForStation_(f);
-    issues = issues.filter((iss) => allowedUnits.has(String(iss.apparatusId || "").trim()));
-  }
-
-  setIssuesTitle_();
-  renderIssues(issues);
-}
-
-async function refreshStatus() {
-  const s = await apiGet({ action: "getAdminStatus" });
-  LAST_ADMIN_STATUS = s.status || null;
-  renderStatus(LAST_ADMIN_STATUS || { rows: [] });
-}
-
-async function refreshAll() {
-  await refreshStatus();
-  await refreshIssues();
-}
-
-/* ---------- Boot ---------- */
-async function boot() {
-  loadPrefs();
-  setIssuesTitle_();
-
-  $("#btnRefresh")?.addEventListener("click", async () => {
-    try {
-      savePrefs();
-      await refreshAll();
-      toast("Refreshed");
-    } catch (err) {
-      toast(err.message, 3200);
-    }
-  });
-
-  $("#adminStationFilter")?.addEventListener("change", async () => {
-    try {
-      savePrefs();
-      setIssuesTitle_();
-
-      // re-render status from cache (or fetch if not yet)
-      if (LAST_ADMIN_STATUS) renderStatus(LAST_ADMIN_STATUS);
-      else await refreshStatus();
-
-      await refreshIssues();
-      toast("Filter applied");
-    } catch (err) {
-      toast(err.message, 3200);
-    }
-  });
-
-  $("#statusTable")?.addEventListener("click", (event) => {
-    const button = event.target.closest(".pill-button");
-    if (!button) return;
-
-    const tr = button.closest("tr");
-    const stationId = tr?.dataset?.stationId;
-    const apparatusId = tr?.dataset?.apparatusId;
-    const categoryKey = button.dataset.check;
-    if (!stationId || !apparatusId || !categoryKey) return;
-
-    const row = LAST_ADMIN_STATUS?.rows?.find(
-      (item) =>
-        String(item.stationId || "") === String(stationId) &&
-        String(item.apparatusId || "") === String(apparatusId)
-    );
-
-    if (!row) return;
-    showCheckDetail_(row, categoryKey);
-  });
-
-  $("#checkDetailClose")?.addEventListener("click", () => closeCheckDetail_());
-  $("#checkDetailModal")?.addEventListener("click", (event) => {
-    if (event.target?.id === "checkDetailModal") closeCheckDetail_();
-  });
-  document.addEventListener("keydown", handleModalKeydown_);
-
-  try {
-    await refreshAll();
-    toast("Loaded");
-  } catch (err) {
-    toast(err.message, 3200);
-  }
-}
-
-document.addEventListener("DOMContentLoaded", boot);
+  const active = (issues || []).filter((x) => String(x.status || ""
