@@ -1,11 +1,11 @@
 /* DFD Configuration UI (Cloudflare Pages)
-   Talks ONLY to /api (Cloudflare Function proxy).
+   Talks ONLY to /api (Cloudflare Function -> Cloudflare D1 backend).
 
-   Expected GAS actions (preferred):
+   Expected API actions (preferred):
      GET  /api?action=getAdminStatus              (must exist already)
      POST /api  {action:"setWeeklyDay", ...}      (must exist already)
 
-   Optional (if implemented in Code.gs):
+   Optional (if implemented in Code.gs):   Optional (if implemented in backup sync service):
      GET  /api?action=getEmailRecipients
      POST /api  {action:"setEmailRecipients", ...}
 */
