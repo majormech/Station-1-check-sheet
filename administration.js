@@ -191,69 +191,12 @@ const CHECK_LABELS = {
   weeklyCheck: "Weekly Check",
 };
 
-function renderPayloadNode_(value) {
-  if (value === null || value === undefined) {
-    return `<span class="payload-empty">—</span>`;
-  }
-
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return `<span class="payload-value">${escapeHtml(String(value))}</span>`;
-  }
-
-  if (Array.isArray(value)) {
-    if (!value.length) return `<span class="payload-empty">[]</span>`;
-    return `
-      <div class="payload-list">
-        ${value
-          .map(
-            (item, idx) => `
-              <div class="payload-row">
-                <div class="payload-key">[${idx}]</div>
-                <div class="payload-val">${renderPayloadNode_(item)}</div>
-              </div>
-            `
-          )
-          .join("")}
-      </div>
-    `;
-  }
-
-  if (typeof value === "object") {
-    const entries = Object.entries(value);
-    if (!entries.length) return `<span class="payload-empty">{}</span>`;
-    return `
-      <div class="payload-list">
-        ${entries
-          .map(([key, entryVal]) => {
-            if (entryVal && typeof entryVal === "object") {
-              return `
-                <details class="payload-detail" open>
-                  <summary><span class="payload-key">${escapeHtml(key)}</span></summary>
-                  <div class="payload-nested">${renderPayloadNode_(entryVal)}</div>
-                </details>
-              `;
-            }
-            return `
-              <div class="payload-row">
-                <div class="payload-key">${escapeHtml(key)}</div>
-                <div class="payload-val">${renderPayloadNode_(entryVal)}</div>
-              </div>
-            `;
-          })
-          .join("")}
-      </div>
-    `;
-  }
-
-  return `<span class="payload-value">${escapeHtml(String(value))}</span>`;
-}
-
 function renderPayload_(payload) {
-  if (!payload) return `<span class="payload-empty">—</span>`;
+  if (!payload) return "—";
   try {
-    return renderPayloadNode_(payload);
+    return JSON.stringify(payload, null, 2);
   } catch {
-    return `<span class="payload-empty">—</span>`;
+    return "—";
   }
 }
 
@@ -281,7 +224,7 @@ function showCheckDetail_(row, categoryKey) {
     </div>
     <div style="margin-top:12px">
       ${hasRecord
-        ? `<b>Payload</b><div class="payload-container">${renderPayload_(lastRecord?.payload)}</div>`
+        ? `<b>Payload</b><pre class="detail-pre">${escapeHtml(renderPayload_(lastRecord?.payload))}</pre>`
         : `<div class="note">No submissions yet for this check.</div>`}
     </div>
   `;
@@ -645,4 +588,44 @@ async function boot() {
       else await refreshStatus();
 
       await refreshIssues();
-      toast("Filter applied")
+      toast("Filter applied");
+    } catch (err) {
+      toast(err.message, 3200);
+    }
+  });
+
+  $("#statusTable")?.addEventListener("click", (event) => {
+    const button = event.target.closest(".pill-button");
+    if (!button) return;
+
+    const tr = button.closest("tr");
+    const stationId = tr?.dataset?.stationId;
+    const apparatusId = tr?.dataset?.apparatusId;
+    const categoryKey = button.dataset.check;
+    if (!stationId || !apparatusId || !categoryKey) return;
+
+    const row = LAST_ADMIN_STATUS?.rows?.find(
+      (item) =>
+        String(item.stationId || "") === String(stationId) &&
+        String(item.apparatusId || "") === String(apparatusId)
+    );
+
+    if (!row) return;
+    showCheckDetail_(row, categoryKey);
+  });
+
+  $("#checkDetailClose")?.addEventListener("click", () => closeCheckDetail_());
+  $("#checkDetailModal")?.addEventListener("click", (event) => {
+    if (event.target?.id === "checkDetailModal") closeCheckDetail_();
+  });
+  document.addEventListener("keydown", handleModalKeydown_);
+
+  try {
+    await refreshAll();
+    toast("Loaded");
+  } catch (err) {
+    toast(err.message, 3200);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", boot);
