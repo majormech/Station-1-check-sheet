@@ -1,6 +1,6 @@
 /************************************************************
- * Decatur Fire Checks — PWA Backend (Google Apps Script)
- * Station-scoped email groups + drug escalation tiers
+ * Decatur Fire Checks — Sheets Backup + Legacy GAS Backend
+ * D1 is primary; this script is used for backup sync + alerts.
  ************************************************************/
 
 /******************************************************
@@ -154,6 +154,9 @@ var TAB_MED_EMAIL_ALERTS = "MedEmailAlerts";
 // NEW: per-station email config
 var TAB_EMAIL_CONFIG     = "EmailConfig";
 
+// D1 async backup (raw payloads)
+var TAB_D1_BACKUP        = "D1_Backup";
+
 // Optional legacy (old)
 var TAB_EMAILS           = "Emails";
 
@@ -290,6 +293,20 @@ function doGet(e) {
           })
         }
       });
+    }
+
+// D1 async backup (raw payloads) -> D1_Backup sheet
+    if (action === "syncfromd1") {
+      ensureSheets_();
+      var token = String(body.token || "").trim();
+      var expected = PropertiesService.getScriptProperties().getProperty("D1_SYNC_TOKEN") || "";
+      if (expected && token !== expected) {
+        return json_({ ok:false, error:"Unauthorized sync token" });
+      }
+
+      var payload = body.payload || {};
+      syncFromD1_(payload);
+      return json_({ ok:true, synced:true });
     }
 
     // ✅ SEARCH across history — GET
@@ -497,7 +514,8 @@ function ensureSheets_() {
     "DrugMaster_T-3",
     TAB_ISSUES,
     TAB_MED_EMAIL_ALERTS,
-    TAB_EMAIL_CONFIG
+    TAB_EMAIL_CONFIG,
+    TAB_D1_BACKUP
   ];
 
   needed.forEach(function(name) {
@@ -643,6 +661,15 @@ function initHeaders_() {
     "IssueId"
   ]);
 
+ initHeaderIfEmpty_(ss.getSheetByName(TAB_D1_BACKUP), [
+    "Timestamp",
+    "Source",
+    "Record Type",
+    "StationId",
+    "ApparatusId",
+    "Payload JSON"
+  ]);
+
 // initHeaders_ (initDrugMasterIfEmpty_ calls)
   initDrugMasterIfEmpty_(ss.getSheetByName("DrugMaster_E-1"));
   initDrugMasterIfEmpty_(ss.getSheetByName("DrugMaster_T-1"));
@@ -666,6 +693,308 @@ function initHeaderIfEmpty_(sh, headerRow) {
   sh.getRange(1,1,1,headerRow.length).setValues([headerRow]);
   sh.getRange(1,1,1,headerRow.length).setFontWeight("bold");
   sh.autoResizeColumns(1, headerRow.length);
+}
+
+function syncFromD1_(payload) {
+  var type = String(payload && payload.type || "").trim().toLowerCase();
+  if (!type) return;
+
+  if (type === "check") {
+    syncCheckFromD1_(payload);
+    if (payload.issueId) appendIssueFromD1_(payload);
+    return;
+  }
+
+  if (type === "issue-update") {
+    syncIssueUpdateFromD1_(payload);
+    return;
+  }
+
+  // Fallback: log unknown payloads in D1_Backup
+  syncFallbackToBackup_(payload);
+}
+
+function syncFallbackToBackup_(payload) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(TAB_D1_BACKUP);
+  if (!sh) return;
+
+  var now = new Date();
+  var source = String(payload.source || "D1").trim();
+  var recordType = String(payload.type || "").trim();
+  var stationId = String(payload.stationId || "").trim();
+  var apparatusId = String(payload.apparatusId || "").trim();
+  var jsonBlob = JSON.stringify(payload || {});
+
+  sh.appendRow([now, source, recordType, stationId, apparatusId, jsonBlob]);
+}
+
+function syncCheckFromD1_(payload) {
+  var checkType = String(payload.checkType || "").trim().toLowerCase();
+  var submitter = String(payload.submitter || "").trim();
+  var unit = String(payload.apparatusId || "").trim();
+  var createdAt = payload.createdAt ? new Date(payload.createdAt) : new Date();
+  var data = payload.checkPayload || {};
+
+  if (!checkType || !unit) return;
+
+  if (checkType === "apparatusdaily") return appendApparatusDailyFromSync_(createdAt, submitter, unit, data);
+  if (checkType === "medicaldaily") return appendMedicalDailyFromSync_(createdAt, submitter, unit, data);
+  if (checkType === "scbaweekly") return appendScbaWeeklyFromSync_(createdAt, submitter, unit, data);
+  if (checkType === "pumpweekly") return appendPumpWeeklyFromSync_(createdAt, submitter, unit, data);
+  if (checkType === "aerialweekly") return appendAerialWeeklyFromSync_(createdAt, submitter, unit, data);
+  if (checkType === "sawweekly") return appendSawWeeklyFromSync_(createdAt, submitter, unit, data);
+  if (checkType === "batteriesweekly") return appendBatteriesWeeklyFromSync_(createdAt, submitter, unit, data);
+  if (checkType === "weeklycheck") return appendWeeklyCheckFromSync_(createdAt, submitter, unit, data);
+  if (checkType === "oosunit") return appendOutOfServiceUnitFromSync_(createdAt, submitter, unit, data);
+  if (checkType === "oosequipment") return appendOutOfServiceEquipmentFromSync_(createdAt, submitter, unit, data);
+}
+
+function appendIssueFromD1_(payload) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(TAB_ISSUES);
+  if (!sh) return;
+
+  var createdAt = payload.createdAt ? new Date(payload.createdAt) : new Date();
+  var updatedAt = payload.updatedAt ? new Date(payload.updatedAt) : createdAt;
+  var stationId = String(payload.stationId || "").trim();
+  var apparatusId = String(payload.apparatusId || "").trim();
+  var text = String(payload.issueText || "").trim();
+  var note = String(payload.issueNote || "").trim();
+  var status = String(payload.issueStatus || "NEW").trim().toUpperCase();
+  var submitter = String(payload.submitter || "").trim();
+  var issueId = String(payload.issueId || "").trim();
+
+  if (!issueId || !text) return;
+
+  sh.appendRow([
+    createdAt,
+    updatedAt,
+    stationId,
+    apparatusId,
+    text,
+    note,
+    status || "NEW",
+    submitter,
+    "",
+    "",
+    false,
+    issueId
+  ]);
+}
+
+function syncIssueUpdateFromD1_(payload) {
+  var issueId = String(payload.issueId || "").trim();
+  if (!issueId) return;
+  var changes = payload.changes || {};
+  var user = String(payload.user || "D1 Sync").trim();
+  updateIssue_(issueId, changes, user);
+}
+
+function appendApparatusDailyFromSync_(ts, submitter, unit, payload) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(TAB_APPARATUS_DAILY);
+  if (!sh) return;
+
+  var knox           = safeItem_(payload.knox);
+  var radios         = safeItem_(payload.radios);
+  var lights         = safeItem_(payload.lights);
+  var scba           = safeItem_(payload.scba);
+  var spareBottles   = safeItem_(payload.spareBottles);
+  var rit            = safeItem_(payload.rit);
+  var flashlights    = safeItem_(payload.flashlights);
+  var tic            = safeItem_(payload.tic);
+  var gasMonitor     = safeItem_(payload.gasMonitor);
+  var handTools      = safeItem_(payload.handTools);
+  var hydraRam       = safeItem_(payload.hydraRam);
+  var groundLadders  = safeItem_(payload.groundLadders);
+  var passports      = safeItem_(payload.passports);
+  var extrication    = safeItem_(payload.extricationTools);
+
+  sh.appendRow([
+    ts, submitter, unit,
+    Number(payload.mileage || 0),
+    Number(payload.engineHours || 0),
+    Number(payload.fuel || 0),
+    Number(payload.def || 0),
+    Number(payload.tank || 0),
+
+    knox.passFail,           knox.notes,
+    radios.passFail,         radios.notes,
+    lights.passFail,         lights.notes,
+    scba.passFail,           scba.notes,
+    spareBottles.passFail,   spareBottles.notes,
+    rit.passFail,            rit.notes,
+    flashlights.passFail,    flashlights.notes,
+    tic.passFail,            tic.notes,
+    gasMonitor.passFail,     gasMonitor.notes,
+    handTools.passFail,      handTools.notes,
+    hydraRam.passFail,       hydraRam.notes,
+    groundLadders.passFail,  groundLadders.notes,
+    passports.passFail,      passports.notes,
+    extrication.passFail,    extrication.notes
+  ]);
+}
+
+function appendMedicalDailyFromSync_(ts, submitter, unit, payload) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(TAB_MEDICAL_DAILY);
+  if (!sh) return;
+
+  var drugs = payload.drugs || [];
+  sh.appendRow([
+    ts,
+    submitter,
+    unit,
+    Number(payload.o2 || 0),
+    payload.airwayPassFail || "Pass",
+    payload.airwayNotes || "",
+    JSON.stringify(drugs)
+  ]);
+
+  updateDrugMaster_(unit, drugs);
+}
+
+function appendScbaWeeklyFromSync_(ts, submitter, unit, payload) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(TAB_SCBA_WEEKLY);
+  if (!sh) return;
+
+  (payload.entries || []).forEach(function(ent) {
+    sh.appendRow([
+      ts, submitter, unit,
+      ent.label || "",
+      Number(ent.psi || 0),
+      ent.passFail || "Pass",
+      ent.notes || ""
+    ]);
+  });
+}
+
+function appendPumpWeeklyFromSync_(ts, submitter, unit, payload) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(TAB_PUMP_WEEKLY);
+  if (!sh) return;
+
+  sh.appendRow([
+    ts, submitter, unit,
+    payload.pumpShift || "Pass",
+    payload.throttle || "Pass",
+    payload.relief || "Pass",
+    payload.gauges || "Pass",
+    payload.overall || "Pass",
+    payload.notes || ""
+  ]);
+}
+
+function appendAerialWeeklyFromSync_(ts, submitter, unit, payload) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(TAB_AERIAL_WEEKLY);
+  if (!sh) return;
+
+  sh.appendRow([
+    ts, submitter, unit,
+    payload.masterSwitch || "Pass",
+    payload.modeSwitch || "Pass",
+    payload.outriggers || "Pass",
+    payload.outriggersLube || "Pass",
+    payload.lRaise || "Pass",
+    payload.lRotate || "Pass",
+    payload.lExtend || "Pass",
+    payload.lRetract || "Pass",
+    payload.lLower || "Pass",
+    payload.nRaise || "Pass",
+    payload.nLower || "Pass",
+    payload.nRight || "Pass",
+    payload.nLeft || "Pass",
+    payload.nFog || "Pass",
+    payload.nStraight || "Pass",
+    payload.lights || "Pass",
+    payload.overall || "Pass",
+    payload.notes || ""
+  ]);
+}
+
+function appendSawWeeklyFromSync_(ts, submitter, unit, payload) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(TAB_SAW_WEEKLY);
+  if (!sh) return;
+
+  (payload.entries || []).forEach(function(ent) {
+    if (!ent || !ent.number) return;
+    sh.appendRow([
+      ts, submitter, unit,
+      ent.type || "",
+      Number(ent.number || 0),
+      Number(ent.fuel || 0),
+      Number(ent.barOil || 0),
+      ent.runs || "Yes",
+      ent.notes || ""
+    ]);
+  });
+}
+
+function appendBatteriesWeeklyFromSync_(ts, submitter, unit, payload) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(TAB_BATTERY_WEEKLY);
+  if (!sh) return;
+
+  sh.appendRow([
+    ts, submitter, unit,
+    payload.batteryTools || "",
+    payload.gasMonitorCharged || "",
+    payload.unitPhoneCharged || "",
+    payload.notes || "",
+    payload.extricationCheck || "",
+    payload.spreader || "",
+    payload.cutter || "",
+    payload.ram || "",
+    payload.allCharged || "",
+    payload.damage || ""
+  ]);
+}
+
+function appendWeeklyCheckFromSync_(ts, submitter, unit, payload) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(TAB_WEEKLY_CHECK);
+  if (!sh) return;
+
+  sh.appendRow([
+    ts, submitter, unit,
+    payload.category || "",
+    Number(payload.mileage || 0),
+    Number(payload.engineHours || 0),
+    Number(payload.generatorHours || 0),
+    Number(payload.fuelLevel || 0),
+    payload.lightsCheck || "Pass",
+    payload.lightsNotes || "",
+    payload.generatorCheck || "Pass",
+    payload.generatorNotes || "",
+    payload.smallEnginesCheck || "Pass",
+    payload.smallEnginesNotes || "",
+    payload.batteriesCheck || "Pass",
+    payload.batteriesNotes || "",
+    payload.boatFuelCheck || "Pass",
+    payload.boatFuelNotes || "",
+    Number(payload.boatEngineHours || 0)
+  ]);
+}
+
+function appendOutOfServiceUnitFromSync_(ts, submitter, unit, payload) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(TAB_OOS_UNITS);
+  if (!sh) return;
+
+  sh.appendRow([
+    ts, submitter, unit,
+    payload.reason || "",
+    payload.replacementReserve || "",
+    payload.equipmentMoved || "",
+    payload.rtsDate || ""
+  ]);
+}
+
+function appendOutOfServiceEquipmentFromSync_(ts, submitter, unit, payload) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(TAB_OOS_EQUIP);
+  if (!sh) return;
+
+  sh.appendRow([
+    ts, submitter, unit,
+    payload.type || "",
+    payload.identifier || "",
+    payload.reason || "",
+    payload.replacement || "",
+    payload.rtsDate || ""
+  ]);
 }
 
 function ensureHeaderColumns_(sh, headersToEnsure) {
