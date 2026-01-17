@@ -3,7 +3,7 @@
      - Apparatus status dashboard
      - Issues (ACK / NEW / OLD / RESOLVED)
 
-   Talks ONLY to /api (Cloudflare Function proxy).
+   Talks ONLY to /api (Cloudflare Function -> Cloudflare D1 backend)
 
    Endpoints used:
      GET  /api?action=getAdminStatus
