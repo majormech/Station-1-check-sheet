@@ -1,7 +1,0 @@
-- name: Install Wrangler
-  run: npm install -g wrangler
-
-- name: Run D1 migrations
-  run: |
-    wrangler d1 execute dfd-system --file migrations/001_d1_schema.sql
-    wrangler d1 execute dfd-system --file migrations/002_backfill_checks_summary.sql
