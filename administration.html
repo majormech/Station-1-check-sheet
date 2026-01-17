@@ -218,6 +218,34 @@
     .hl-old{ background: var(--hl-old); }
     .hl-ack{ background: var(--hl-ack); }
 
+    .detail-issues{
+      margin-top:6px;
+      display:grid;
+      gap:6px;
+    }
+    .detail-issue{
+      padding:6px 8px;
+      border-radius:8px;
+      border:1px solid var(--line);
+      font-size:12px;
+      background:#fff;
+    }
+    .detail-issue.hl-new{ background: var(--hl-new); }
+    .detail-issue.hl-old{ background: var(--hl-old); }
+    .detail-issue.hl-ack{ background: var(--hl-ack); }
+    .detail-fails{
+      margin-top:6px;
+      display:grid;
+      gap:6px;
+    }
+    .fail-item{
+      padding:8px;
+      border-radius:10px;
+      border:1px solid var(--b-new);
+      background:var(--hl-new);
+      font-size:12px;
+    }
+
     .toggle{
       display:flex;
       align-items:center;
