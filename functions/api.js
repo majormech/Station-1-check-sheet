@@ -236,6 +236,128 @@ async function handlePost_(env, url, action, body, context) {
     return json_({ ok: true, executed: true, migration });
   }
 
+   if (action === "importfromsheets") {
+    const user = String(body.user || "").trim();
+    if (!user) return jsonError_(400, "Missing user");
+    if (!env?.SHEETS_SYNC_URL) return jsonError_(400, "Missing SHEETS_SYNC_URL");
+
+    const sheetsConfig = await fetchSheetsAction_(env, "getconfig");
+    const sheetsMeta = await fetchSheetsAction_(env, "getsearchmeta");
+    const sheetsWeekly = await fetchSheetsAction_(env, "getweeklyconfig");
+    const sheetsEmails = await fetchSheetsAction_(env, "getemailconfig");
+
+    const stations = sheetsMeta?.meta?.stations || [];
+    const drugs = sheetsConfig?.config?.drugs || [];
+    const defaultQty = sheetsConfig?.config?.defaultQty || {};
+    const weeklyConfig = sheetsWeekly?.weeklyConfig || {};
+    const emailConfig = sheetsEmails?.emails || {};
+
+    let stationCount = 0;
+    let apparatusCount = 0;
+    let drugCount = 0;
+    let weeklyCount = 0;
+    let emailCount = 0;
+
+    for (const st of stations) {
+      await db
+        .prepare(
+          "INSERT INTO stations (station_id, station_name) VALUES (?, ?) ON CONFLICT(station_id) DO UPDATE SET station_name = excluded.station_name"
+        )
+        .bind(String(st.stationId || "").trim(), String(st.stationName || "").trim())
+        .run();
+      stationCount += 1;
+
+      for (const ap of st.apparatus || []) {
+        await db
+          .prepare(
+            "INSERT INTO apparatus (apparatus_id, station_id, apparatus_name) VALUES (?, ?, ?) ON CONFLICT(apparatus_id) DO UPDATE SET station_id = excluded.station_id, apparatus_name = excluded.apparatus_name"
+          )
+          .bind(
+            String(ap.apparatusId || "").trim(),
+            String(st.stationId || "").trim(),
+            String(ap.apparatusName || ap.apparatusId || "").trim()
+          )
+          .run();
+        apparatusCount += 1;
+      }
+    }
+
+    for (const name of drugs) {
+      const trimmed = String(name || "").trim();
+      if (!trimmed) continue;
+      await db
+        .prepare(
+          "INSERT INTO drugs (name, default_qty) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET default_qty = excluded.default_qty"
+        )
+        .bind(trimmed, Number(defaultQty[trimmed] || 0))
+        .run();
+      drugCount += 1;
+    }
+
+    for (const [checkKey, weekday] of Object.entries(weeklyConfig || {})) {
+      await db
+        .prepare(
+          "INSERT INTO weekly_config (check_key, weekday) VALUES (?, ?) ON CONFLICT(check_key) DO UPDATE SET weekday = excluded.weekday"
+        )
+        .bind(String(checkKey || "").trim(), String(weekday || "").trim())
+        .run();
+      weeklyCount += 1;
+    }
+
+    const issuesByStation = emailConfig.issuesByStation || {};
+    const drugsAllByStation = emailConfig.drugsAllByStation || {};
+    const drugsPrimaryByStation = emailConfig.drugsPrimaryByStation || {};
+    const masterIssues = emailConfig.masterIssues || [];
+
+    const stationIds = new Set([
+      ...Object.keys(issuesByStation || {}),
+      ...Object.keys(drugsAllByStation || {}),
+      ...Object.keys(drugsPrimaryByStation || {})
+    ]);
+
+    for (const stationId of stationIds) {
+      const listIssues = Array.isArray(issuesByStation[stationId]) ? issuesByStation[stationId] : [];
+      const listAll = Array.isArray(drugsAllByStation[stationId]) ? drugsAllByStation[stationId] : [];
+      const listPrimary = Array.isArray(drugsPrimaryByStation[stationId]) ? drugsPrimaryByStation[stationId] : [];
+
+      await db
+        .prepare(
+          "INSERT INTO email_config (station_id, issues_emails, drugs_all_emails, drugs_primary_emails) VALUES (?, ?, ?, ?) ON CONFLICT(station_id) DO UPDATE SET issues_emails = excluded.issues_emails, drugs_all_emails = excluded.drugs_all_emails, drugs_primary_emails = excluded.drugs_primary_emails"
+        )
+        .bind(
+          String(stationId || "").trim(),
+          listIssues.join("\n"),
+          listAll.join("\n"),
+          listPrimary.join("\n")
+        )
+        .run();
+      emailCount += 1;
+    }
+
+    if (Array.isArray(masterIssues) && masterIssues.length) {
+      await db
+        .prepare(
+          "INSERT INTO email_config (station_id, issues_emails) VALUES (?, ?) ON CONFLICT(station_id) DO UPDATE SET issues_emails = excluded.issues_emails"
+        )
+        .bind("MASTER", masterIssues.join("\n"))
+        .run();
+      emailCount += 1;
+    }
+
+    return json_({
+      ok: true,
+      imported: true,
+      summary: {
+        stations: stationCount,
+        apparatus: apparatusCount,
+        drugs: drugCount,
+        weeklyConfig: weeklyCount,
+        emailConfigs: emailCount,
+        importedBy: user
+      }
+    });
+  }
+
   if (action === "savecheck") {
     const stationId = String(body.stationId || "").trim();
     const apparatusId = String(body.apparatusId || "").trim();
@@ -734,6 +856,27 @@ async function searchMedAlerts_(db, filters) {
 function safeId_() {
   if (crypto?.randomUUID) return crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+async function fetchSheetsAction_(env, action, params = {}) {
+  if (!env?.SHEETS_SYNC_URL) throw new Error("Missing SHEETS_SYNC_URL");
+  const url = new URL(env.SHEETS_SYNC_URL);
+  url.searchParams.set("action", action);
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value == null) return;
+    url.searchParams.set(key, String(value));
+  });
+
+  const res = await fetch(url.toString(), { method: "GET" });
+  const text = await res.text();
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error(`Bad JSON from Sheets (${action}): ${text.slice(0, 160)}`);
+  }
+  if (!json.ok) throw new Error(json.error || `Sheets request failed (${action})`);
+  return json;
 }
 
 async function triggerSheetsSync_(env, context, payload) {
