@@ -191,12 +191,69 @@ const CHECK_LABELS = {
   weeklyCheck: "Weekly Check",
 };
 
+function renderPayloadNode_(value) {
+  if (value === null || value === undefined) {
+    return `<span class="payload-empty">—</span>`;
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return `<span class="payload-value">${escapeHtml(String(value))}</span>`;
+  }
+
+  if (Array.isArray(value)) {
+    if (!value.length) return `<span class="payload-empty">[]</span>`;
+    return `
+      <div class="payload-list">
+        ${value
+          .map(
+            (item, idx) => `
+              <div class="payload-row">
+                <div class="payload-key">[${idx}]</div>
+                <div class="payload-val">${renderPayloadNode_(item)}</div>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+    `;
+  }
+
+  if (typeof value === "object") {
+    const entries = Object.entries(value);
+    if (!entries.length) return `<span class="payload-empty">{}</span>`;
+    return `
+      <div class="payload-list">
+        ${entries
+          .map(([key, entryVal]) => {
+            if (entryVal && typeof entryVal === "object") {
+              return `
+                <details class="payload-detail" open>
+                  <summary><span class="payload-key">${escapeHtml(key)}</span></summary>
+                  <div class="payload-nested">${renderPayloadNode_(entryVal)}</div>
+                </details>
+              `;
+            }
+            return `
+              <div class="payload-row">
+                <div class="payload-key">${escapeHtml(key)}</div>
+                <div class="payload-val">${renderPayloadNode_(entryVal)}</div>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
+  return `<span class="payload-value">${escapeHtml(String(value))}</span>`;
+}
+
 function renderPayload_(payload) {
-  if (!payload) return "—";
+  if (!payload) return `<span class="payload-empty">—</span>`;
   try {
-    return JSON.stringify(payload, null, 2);
+    return renderPayloadNode_(payload);
   } catch {
-    return "—";
+    return `<span class="payload-empty">—</span>`;
   }
 }
 
@@ -224,7 +281,7 @@ function showCheckDetail_(row, categoryKey) {
     </div>
     <div style="margin-top:12px">
       ${hasRecord
-        ? `<b>Payload</b><pre class="detail-pre">${escapeHtml(renderPayload_(lastRecord?.payload))}</pre>`
+        ? `<b>Payload</b><div class="payload-container">${renderPayload_(lastRecord?.payload)}</div>`
         : `<div class="note">No submissions yet for this check.</div>`}
     </div>
   `;
