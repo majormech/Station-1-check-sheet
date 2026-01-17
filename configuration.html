@@ -196,6 +196,22 @@
       <label for="masterIssuesEmails">Master Issues Emails (All Stations)</label>
       <textarea id="masterIssuesEmails" placeholder="one email per line"></textarea>
     </section>
+    
+    <section class="card" id="migrationSection">
+      <h2>Database Migrations</h2>
+      <div class="note">Use these buttons to run D1 migrations manually if needed.</div>
+
+      <div class="row" style="margin-top:12px">
+        <div>
+          <label>&nbsp;</label>
+          <button class="btn" id="btnRunSchemaMigration" type="button">Run 001 D1 Schema</button>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button class="btn" id="btnRunBackfillMigration" type="button">Run 002 Backfill Checks Summary</button>
+        </div>
+      </div>
+    </section>
   </main>
 
   <div id="toast" aria-live="polite" aria-atomic="true">
