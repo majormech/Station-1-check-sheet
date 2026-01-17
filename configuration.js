@@ -294,7 +294,6 @@ async function boot() {
     catch (e) { toast(e.message, 3200); }
   });
 
-
   try {
     await loadStations();
     if ($("#emailStation") && !currentEmailStation() && STATION_LIST.length) {
