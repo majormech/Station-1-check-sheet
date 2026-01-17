@@ -55,6 +55,11 @@ function loadPrefs() {
   const filter = localStorage.getItem("dfd_admin_station_filter") || "all";
   const sel = $("#adminStationFilter");
   if (sel) sel.value = filter;
+
+  const hideNa = localStorage.getItem("dfd_admin_hide_na") === "true";
+  const hideNaEl = $("#hideNaChecks");
+  if (hideNaEl) hideNaEl.checked = hideNa;
+  applyHideNa_(hideNa);
 }
 
 function savePrefs() {
@@ -63,6 +68,9 @@ function savePrefs() {
 
   const sel = $("#adminStationFilter");
   if (sel) localStorage.setItem("dfd_admin_station_filter", sel.value || "all");
+
+  const hideNaEl = $("#hideNaChecks");
+  if (hideNaEl) localStorage.setItem("dfd_admin_hide_na", hideNaEl.checked ? "true" : "false");
 }
 
 function adminName() {
@@ -166,7 +174,7 @@ function escapeHtml(s) {
 
 function pill(status, checkKey) {
   if (status === null) {
-    return `<span class="pill na">N/A</span><span class="sub">—</span>`;
+    return `<span class="na-content"><span class="pill na">N/A</span><span class="sub">—</span></span>`;
   }
   const last = status?.last ? new Date(status.last) : null;
   const lastStr = last ? last.toLocaleString() : "—";
@@ -304,6 +312,10 @@ function handleModalKeydown_(event) {
 /* ---------- Status ---------- */
 let LAST_ADMIN_STATUS = null;
 
+function applyHideNa_(enabled) {
+  document.body.classList.toggle("hide-na", !!enabled);
+}
+
 function renderStatus(status) {
   const tb = $("#statusTable tbody");
   if (!tb) return;
@@ -327,9 +339,18 @@ function renderStatus(status) {
     const req = requirementsFor(r.apparatusId);
 
     const cell = (required, obj, key) => {
-      if (!required) return pill(null);
-      return pill(obj, key);
+      if (!required) return { html: pill(null), na: true };
+      return { html: pill(obj, key), na: false };
     };
+
+    const appDaily = cell(req.apparatusDaily, c.apparatusDaily, "apparatusDaily");
+    const medDaily = cell(req.medicalDaily, c.medicalDaily, "medicalDaily");
+    const scbaWeekly = cell(req.scbaWeekly, c.scbaWeekly, "scbaWeekly");
+    const pumpWeekly = cell(req.pumpWeekly, c.pumpWeekly, "pumpWeekly");
+    const aerialWeekly = cell(req.aerialWeekly, c.aerialWeekly, "aerialWeekly");
+    const sawWeekly = cell(req.sawWeekly, c.sawWeekly, "sawWeekly");
+    const batteriesWeekly = cell(req.batteriesWeekly, c.batteriesWeekly, "batteriesWeekly");
+    const weeklyCheck = cell(req.weeklyCheck, c.weeklyCheck, "weeklyCheck");
 
     const tr = document.createElement("tr");
     tr.dataset.stationId = String(r.stationId || "");
@@ -337,14 +358,14 @@ function renderStatus(status) {
     tr.innerHTML = `
       <td data-label="Station">${escapeHtml(r.stationName || ("Station " + r.stationId))}</td>
       <td data-label="Apparatus">${escapeHtml(r.apparatusId)}</td>
-      <td data-label="Apparatus Daily">${cell(req.apparatusDaily, c.apparatusDaily, "apparatusDaily")}</td>
-      <td data-label="Medical Daily">${cell(req.medicalDaily, c.medicalDaily, "medicalDaily")}</td>
-      <td data-label="SCBA Weekly">${cell(req.scbaWeekly, c.scbaWeekly, "scbaWeekly")}</td>
-      <td data-label="Pump Weekly">${cell(req.pumpWeekly, c.pumpWeekly, "pumpWeekly")}</td>
-      <td data-label="Aerial Weekly">${cell(req.aerialWeekly, c.aerialWeekly, "aerialWeekly")}</td>
-      <td data-label="Saws Weekly">${cell(req.sawWeekly, c.sawWeekly, "sawWeekly")}</td>
-      <td data-label="Batteries Weekly">${cell(req.batteriesWeekly, c.batteriesWeekly, "batteriesWeekly")}</td>
-      <td data-label="Weekly Check">${cell(req.weeklyCheck, c.weeklyCheck, "weeklyCheck")}</td>
+      <td data-label="Apparatus Daily" class="${appDaily.na ? "na-cell" : ""}">${appDaily.html}</td>
+      <td data-label="Medical Daily" class="${medDaily.na ? "na-cell" : ""}">${medDaily.html}</td>
+      <td data-label="SCBA Weekly" class="${scbaWeekly.na ? "na-cell" : ""}">${scbaWeekly.html}</td>
+      <td data-label="Pump Weekly" class="${pumpWeekly.na ? "na-cell" : ""}">${pumpWeekly.html}</td>
+      <td data-label="Aerial Weekly" class="${aerialWeekly.na ? "na-cell" : ""}">${aerialWeekly.html}</td>
+      <td data-label="Saws Weekly" class="${sawWeekly.na ? "na-cell" : ""}">${sawWeekly.html}</td>
+      <td data-label="Batteries Weekly" class="${batteriesWeekly.na ? "na-cell" : ""}">${batteriesWeekly.html}</td>
+      <td data-label="Weekly Check" class="${weeklyCheck.na ? "na-cell" : ""}">${weeklyCheck.html}</td>
     `;
     tb.appendChild(tr);
   }
@@ -649,6 +670,11 @@ async function boot() {
     } catch (err) {
       toast(err.message, 3200);
     }
+  });
+
+  $("#hideNaChecks")?.addEventListener("change", () => {
+    savePrefs();
+    applyHideNa_(document.querySelector("#hideNaChecks")?.checked);
   });
 
   $("#statusTable")?.addEventListener("click", (event) => {
