@@ -415,6 +415,8 @@ async function handlePost_(env, url, action, body, context) {
       issueResult = { issueId, status: "NEW" };
     }
 
+    const issueRecipients = issueText ? await getIssueRecipients_(db, stationId) : [];
+
     await triggerSheetsSync_(env, context, {
       type: "check",
       checkId,
@@ -427,7 +429,8 @@ async function handlePost_(env, url, action, body, context) {
       issueId: issueResult?.issueId || "",
       issueStatus: issueResult?.status || "",
       issueText,
-      issueNote
+      issueNote,
+      issueRecipients
     });
 
     return json_({ ok: true, saved: true, issue: issueResult });
@@ -591,6 +594,20 @@ function splitEmails_(blob) {
     .split(/\r?\n|,/g)
     .map((x) => x.trim())
     .filter(Boolean);
+}
+
+async function getIssueRecipients_(db, stationId) {
+  const target = String(stationId || "").trim();
+  if (!target) return [];
+  const rows = await db
+    .prepare("SELECT station_id, issues_emails FROM email_config WHERE station_id IN (?, ?)")
+    .bind(target, "MASTER")
+    .all();
+  const recipients = [];
+  for (const row of rows.results || []) {
+    recipients.push(...splitEmails_(row.issues_emails));
+  }
+  return Array.from(new Set(recipients));
 }
 
 async function buildChecksStatusForUnit_(db, unit, weeklyConfig) {
