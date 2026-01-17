@@ -225,7 +225,13 @@ async function handlePost_(env, url, action, body, context) {
     if (!allowed.has(migration)) return jsonError_(400, "Unknown migration");
     if (!user) return jsonError_(400, "Missing user");
 
-    await db.exec(sql);
+    const statements = sql
+      .split(/;\s*(?:\r?\n|$)/)
+      .map((stmt) => stmt.trim())
+      .filter(Boolean);
+    for (const stmt of statements) {
+      await db.prepare(stmt).run();
+    }
 
     return json_({ ok: true, executed: true, migration });
   }
