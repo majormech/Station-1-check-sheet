@@ -268,6 +268,26 @@ async function runMigration(fileName, label) {
   toast(`${label} migration executed`);
 }
 
+async function importFromSheets() {
+  const user = adminName();
+  const ok = window.confirm("Import configuration data from Google Sheets now? This will overwrite D1 config values.");
+  if (!ok) return;
+
+  const btn = $("#btnImportSheets");
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await apiPost({ action: "importFromSheets", user });
+    const summary = res?.summary || {};
+    toast(`Imported stations: ${summary.stations || 0}, apparatus: ${summary.apparatus || 0}, drugs: ${summary.drugs || 0}`);
+    await loadStations();
+    await loadWeeklyConfig();
+    await loadEmailConfig();
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 /* ---------- Boot ---------- */
 async function boot() {
   $("#btnWeeklyTab")?.addEventListener("click", () => showSection("weekly"));
@@ -294,6 +314,11 @@ async function boot() {
     catch (e) { toast(e.message, 3200); }
   });
 
+     $("#btnImportSheets")?.addEventListener("click", async () => {
+    try { await importFromSheets(); }
+    catch (e) { toast(e.message, 3200); }
+  });
+   
   try {
     await loadStations();
     if ($("#emailStation") && !currentEmailStation() && STATION_LIST.length) {
