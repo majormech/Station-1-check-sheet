@@ -295,18 +295,9 @@ function doGet(e) {
       });
     }
 
-// D1 async backup (raw payloads) -> D1_Backup sheet
+    // D1 async backup (raw payloads) -> D1_Backup sheet
     if (action === "syncfromd1") {
-      ensureSheets_();
-      var token = String(body.token || "").trim();
-      var expected = PropertiesService.getScriptProperties().getProperty("D1_SYNC_TOKEN") || "";
-      if (expected && token !== expected) {
-        return json_({ ok:false, error:"Unauthorized sync token" });
-      }
-
-      var payload = body.payload || {};
-      syncFromD1_(payload);
-      return json_({ ok:true, synced:true });
+      return json_({ ok:false, error:"Use POST for syncFromD1" });
     }
 
     // ✅ SEARCH across history — GET
@@ -436,6 +427,19 @@ function doPost(e) {
       return json_({ ok:true, saved:true, emails: getEmailConfigByStation_() });
     }
 
+    // D1 async backup (raw payloads) -> D1_Backup sheet
+    if (action === "syncfromd1") {
+      var tokenD1 = String(body.token || "").trim();
+      var expectedD1 = PropertiesService.getScriptProperties().getProperty("D1_SYNC_TOKEN") || "";
+      if (expectedD1 && tokenD1 !== expectedD1) {
+        return json_({ ok:false, error:"Unauthorized sync token" });
+      }
+
+      var payloadD1 = body.payload || {};
+      syncFromD1_(payloadD1);
+      return json_({ ok:true, synced:true });
+    }
+
     // Med email anti-spam helper (21 day lookback) — unchanged
     if (action === "getmedalertstatus") {
       var station = String(body.station || "").trim();
@@ -530,7 +534,6 @@ function ensureSheets_() {
   return true;
 }
 
-
 function initHeaders_() {
   var ss = SpreadsheetApp.getActive();
 
@@ -584,57 +587,50 @@ function initHeaders_() {
     "Outriggers","Outriggers Lubed",
     "Ladder Raise","Ladder Rotate","Ladder Extend",
     "Ladder Retract","Ladder Lower",
-    "Nozzle Raise","Nozzle Lower","Nozzle Right",
-    "Nozzle Left","Nozzle Fog","Nozzle Straight",
+    "Nozzle Raise","Nozzle Lower",
+    "Nozzle Right","Nozzle Left",
+    "Nozzle Fog","Nozzle Straight",
     "Lights","Overall (Pass/Fail)","Notes"
   ]);
 
   initHeaderIfEmpty_(ss.getSheetByName(TAB_SAW_WEEKLY), [
     "Timestamp","Submitter","Unit",
-    "Type (Roof/Rotary)","Saw #",
-    "Fuel %","Bar Oil %","Runs (Yes/No)","Notes"
+    "Saw Type","Saw #",
+    "Fuel","Bar Oil",
+    "Runs (Yes/No)",
+    "Notes"
   ]);
 
   initHeaderIfEmpty_(ss.getSheetByName(TAB_BATTERY_WEEKLY), [
     "Timestamp","Submitter","Unit",
-    "Battery Tools",
-    "4-Gas Monitor Charged",
+    "Battery Tools","Gas Monitor Charged",
     "Unit Phone Charged",
     "Notes",
     "Extrication Check",
     "Spreader",
     "Cutter",
     "Ram",
-    "All 6 Batteries Charged",
-    "Damage Noted"
+    "All Charged",
+    "Damage"
   ]);
 
   initHeaderIfEmpty_(ss.getSheetByName(TAB_WEEKLY_CHECK), [
     "Timestamp","Submitter","Unit",
-    "Category",
-    "Mileage",
-    "Engine Hours",
-    "Generator Hours",
-    "Fuel %",
-    "Lights Check (Pass/Fail)",
-    "Lights Notes",
-    "Generator Ran/Working (Pass/Fail)",
-    "Generator Notes",
-    "Small Engines Fuel Level/Ran (Pass/Fail)",
-    "Small Engines Notes",
-    "Batteries Charged (Pass/Fail)",
-    "Batteries Notes",
-    "Boat Engine Fuel Level/Ran (Pass/Fail)",
-    "Boat Engine Notes",
+    "Category","Mileage","Engine Hours","Generator Hours","Fuel Level",
+    "Lights Check","Lights Notes",
+    "Generator Check","Generator Notes",
+    "Small Engines Check","Small Engines Notes",
+    "Batteries Check","Batteries Notes",
+    "Boat Fuel Check","Boat Fuel Notes",
     "Boat Engine Hours"
   ]);
 
   initHeaderIfEmpty_(ss.getSheetByName(TAB_OOS_UNITS), [
     "Timestamp","Submitter","Unit",
     "Reason",
-    "Replacing Reserve Unit",
-    "Equipment Moved (list)",
-    "Return To Service Date (optional)"
+    "Reserve / Replacement",
+    "Equipment Moved",
+    "Expected RTS Date (optional)"
   ]);
 
   initHeaderIfEmpty_(ss.getSheetByName(TAB_OOS_EQUIP), [
@@ -701,7 +697,10 @@ function syncFromD1_(payload) {
 
   if (type === "check") {
     syncCheckFromD1_(payload);
-    if (payload.issueId) appendIssueFromD1_(payload);
+    if (payload.issueId) {
+      appendIssueFromD1_(payload);
+      sendIssueEmailFromD1_(payload);
+    }
     return;
   }
 
@@ -779,6 +778,46 @@ function appendIssueFromD1_(payload) {
     false,
     issueId
   ]);
+}
+
+function sendIssueEmailFromD1_(payload) {
+  var rawRecipients = payload && payload.issueRecipients;
+  var recipients = Array.isArray(rawRecipients)
+    ? parseEmailBlob_(rawRecipients.join("\n"))
+    : parseEmailBlob_(rawRecipients);
+
+  if (!recipients.length) return false;
+
+  var stationId = String(payload.stationId || "").trim();
+  var apparatusId = String(payload.apparatusId || "").trim();
+  var submitter = String(payload.submitter || "").trim();
+  var issueText = String(payload.issueText || "").trim();
+  var note = String(payload.issueNote || "").trim();
+
+  if (!issueText) return false;
+
+  var stName = (STATIONS[stationId] && STATIONS[stationId].stationName)
+    ? STATIONS[stationId].stationName
+    : ("Station " + stationId);
+
+  var tz = Session.getScriptTimeZone() || "America/Chicago";
+  var now = new Date();
+
+  var subject = "DFD Issue — " + stName + " — " + apparatusId +
+    " (" + Utilities.formatDate(now, tz, "yyyy-MM-dd HH:mm") + ")";
+
+  var body =
+    "A NEW issue was entered.\n\n" +
+    "Station: " + stName + " (ID " + stationId + ")\n" +
+    "Apparatus: " + apparatusId + "\n" +
+    "Entered by: " + submitter + "\n" +
+    "Time: " + Utilities.formatDate(now, tz, "yyyy-MM-dd HH:mm") + "\n\n" +
+    "Issue:\n" + issueText + "\n\n" +
+    (note ? ("Bullet note:\n" + note + "\n\n") : "") +
+    "— Sent by DFD Checks (D1 sync)";
+
+  MailApp.sendEmail(recipients.join(","), subject, body);
+  return true;
 }
 
 function syncIssueUpdateFromD1_(payload) {
