@@ -1,7 +1,7 @@
 /* app.js (Crew UI — Decatur Fire — Daily / Weekly Checks Alpha)
-   Talks ONLY to /api (Cloudflare Function proxy) -> Google Apps Script.
+   Talks ONLY to /api (Cloudflare Function -> Cloudflare D1 backend).
 
-   Required GAS actions:
+   Required API actions
      GET  /api?action=getConfig
      GET  /api?action=getApparatus&stationId=1
      GET  /api?action=getActiveIssues&stationId=1&apparatusId=E-1
