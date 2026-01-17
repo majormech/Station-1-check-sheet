@@ -9,3 +9,8 @@ database_id = "<YOUR_D1_DATABASE_ID>"
 [vars]
 SHEETS_SYNC_URL = "https://script.google.com/macros/s/<YOUR_SCRIPT_ID>/exec"
 SHEETS_SYNC_TOKEN = "<YOUR_SHARED_TOKEN>"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "dfd-system"
+database_id = "08e7a897-f7de-43e6-b470-3b1333e9deca"
