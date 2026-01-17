@@ -215,6 +215,21 @@ async function handlePost_(env, url, action, body, context) {
     return json_({ ok: true, saved: true, emails: await getEmailConfig_(db) });
   }
 
+  if (action === "runmigration") {
+    const migration = String(body.migration || "").trim();
+    const sql = String(body.sql || "").trim();
+    const user = String(body.user || "").trim();
+    const allowed = new Set(["001_d1_schema.sql", "002_backfill_checks_summary.sql"]);
+
+    if (!migration || !sql) return jsonError_(400, "Missing migration or sql");
+    if (!allowed.has(migration)) return jsonError_(400, "Unknown migration");
+    if (!user) return jsonError_(400, "Missing user");
+
+    await db.exec(sql);
+
+    return json_({ ok: true, executed: true, migration });
+  }
+
   if (action === "savecheck") {
     const stationId = String(body.stationId || "").trim();
     const apparatusId = String(body.apparatusId || "").trim();
