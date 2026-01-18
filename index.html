@@ -52,6 +52,10 @@
       background:var(--brand); color:#fff; border:none; cursor:pointer; font-weight:800;
       padding:12px 14px;
     }
+        .btn:disabled{
+      opacity:0.65;
+      cursor:not-allowed;
+    }
     .btn:active{transform:translateY(1px)}
     ul{margin:8px 0 0 18px}
     #status{font-weight:700}
@@ -140,7 +144,7 @@
       </div>
 
       <div style="margin-top:12px">
-        <div id="status" class="muted">Loading…</div>
+       <div id="status" class="muted" role="status" aria-live="polite">Loading…</div>
       </div>
     </div>
 
