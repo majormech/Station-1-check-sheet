@@ -103,6 +103,42 @@ async function handleGet_(env, url, action) {
     return json_({ ok: true, issues: normalizeIssues_(issues.results || []) });
   }
 
+   if (action === "getgasmonitormaintenance") {
+    const rows = await db
+      .prepare(
+        "SELECT id, station_id, apparatus_id, submitter, payload_json, created_at FROM checks WHERE category = ? ORDER BY created_at DESC"
+      )
+      .bind("oosEquipment")
+      .all();
+
+    const items = [];
+    for (const row of rows.results || []) {
+      const payload = safeJsonParse_(row.payload_json) || {};
+      const type = String(payload.type || "").trim();
+      if (!isGasMonitorType_(type)) continue;
+      items.push({
+        checkId: row.id,
+        stationId: row.station_id,
+        apparatusId: row.apparatus_id,
+        submitter: row.submitter,
+        createdAt: row.created_at,
+        type,
+        identifier: String(payload.identifier || "").trim(),
+        reason: String(payload.reason || "").trim(),
+        replacement: String(payload.replacement || "").trim(),
+        rtsDate: String(payload.rtsDate || "").trim()
+      });
+    }
+
+    const repairsMap = await fetchGasMonitorRepairs_(db, items.map((item) => item.checkId));
+    const enriched = items.map((item) => ({
+      ...item,
+      repair: repairsMap.get(item.checkId) || null
+    }));
+
+    return json_({ ok: true, items: enriched });
+  }
+
    if (action === "listissues") {
     const stationId = String(url.searchParams.get("stationId") || "").trim();
     const apparatusId = String(url.searchParams.get("apparatusId") || "").trim();
@@ -219,7 +255,7 @@ async function handlePost_(env, url, action, body, context) {
     const migration = String(body.migration || "").trim();
     const sql = String(body.sql || "").trim();
     const user = String(body.user || "").trim();
-    const allowed = new Set(["001_d1_schema.sql", "002_backfill_checks_summary.sql"]);
+     const allowed = new Set(["001_d1_schema.sql", "002_backfill_checks_summary.sql", "003_gas_monitor_repairs.sql"]);
 
     if (!migration || !sql) return jsonError_(400, "Missing migration or sql");
     if (!allowed.has(migration)) return jsonError_(400, "Unknown migration");
@@ -477,6 +513,28 @@ async function handlePost_(env, url, action, body, context) {
     });
 
     return json_({ ok: true, updated: true });
+  }
+
+  if (action === "upsertgasmonitorrepair") {
+    const checkId = String(body.checkId || "").trim();
+    const status = String(body.status || "Needs Service").trim();
+    const technician = String(body.technician || "").trim();
+    const notes = String(body.notes || "").trim();
+    const equipmentType = String(body.equipmentType || "").trim();
+    const equipmentIdentifier = String(body.equipmentIdentifier || "").trim();
+
+    if (!checkId) return jsonError_(400, "Missing checkId");
+    if (!technician) return jsonError_(400, "Missing technician");
+
+    const now = new Date().toISOString();
+    await db
+      .prepare(
+        "INSERT INTO gas_monitor_repairs (check_id, equipment_type, equipment_identifier, status, technician, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(check_id) DO UPDATE SET equipment_type = excluded.equipment_type, equipment_identifier = excluded.equipment_identifier, status = excluded.status, technician = excluded.technician, notes = excluded.notes, updated_at = excluded.updated_at"
+      )
+      .bind(checkId, equipmentType, equipmentIdentifier, status, technician, notes, now, now)
+      .run();
+
+    return json_({ ok: true, saved: true });
   }
 
   return jsonError_(400, "Unknown action");
@@ -740,6 +798,39 @@ function buildCheckSummary_(checkType, payload) {
     return `OOS Equip: ${payload.type || ""} ${payload.identifier || ""}`.trim();
   }
   return checkType;
+}
+
+function isGasMonitorType_(type) {
+  const value = String(type || "").trim().toLowerCase();
+  if (!value) return false;
+  return (
+    value.includes("4 gas") ||
+    value.includes("4-gas") ||
+    value.includes("four gas") ||
+    value.includes("co2 monitor") ||
+    value.includes("h2s monitor") ||
+    value.includes("gas monitor")
+  );
+}
+
+async function fetchGasMonitorRepairs_(db, checkIds) {
+  if (!checkIds.length) return new Map();
+  const placeholders = checkIds.map(() => "?").join(",");
+  const res = await db
+    .prepare(`SELECT check_id, status, technician, notes, created_at, updated_at FROM gas_monitor_repairs WHERE check_id IN (${placeholders})`)
+    .bind(...checkIds)
+    .all();
+  const map = new Map();
+  for (const row of res.results || []) {
+    map.set(row.check_id, {
+      status: row.status,
+      technician: row.technician,
+      notes: row.notes,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    });
+  }
+  return map;
 }
 
 async function searchRecords_(db, params) {
