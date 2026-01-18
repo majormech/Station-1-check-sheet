@@ -21,6 +21,7 @@ const LOCATION_UNITS = new Set([
   "ZODIAC","DIVE BOAT"
 ]);
 const EXTRICATION_UNITS = new Set(["E-1","E-4"]);
+let saveButtonResetTimer = null;
 
 function normalizeUnitId(id) {
   return String(id || "").trim().toUpperCase();
@@ -53,6 +54,38 @@ function setStatus(msg, isError = false) {
   el.textContent = msg || "";
   el.style.color = isError ? "#c81e1e" : "";
   el.style.fontWeight = isError ? "800" : "700";
+}
+
+function setSaveButtonState(state) {
+  const btn = $("#saveBtn");
+  if (!btn) return;
+  if (!btn.dataset.originalLabel) {
+    btn.dataset.originalLabel = btn.textContent || "Save";
+  }
+
+  if (saveButtonResetTimer) {
+    clearTimeout(saveButtonResetTimer);
+    saveButtonResetTimer = null;
+  }
+
+  if (state === "saving") {
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+    btn.setAttribute("aria-busy", "true");
+    return;
+  }
+
+  if (state === "saved") {
+    btn.disabled = false;
+    btn.textContent = "Saved ✓";
+    btn.setAttribute("aria-busy", "false");
+    saveButtonResetTimer = setTimeout(() => setSaveButtonState("idle"), 2000);
+    return;
+  }
+
+  btn.disabled = false;
+  btn.textContent = btn.dataset.originalLabel;
+  btn.removeAttribute("aria-busy");
 }
 
 function escapeHtml(s) {
@@ -1030,7 +1063,7 @@ async function onSave() {
       smallEnginesCheck: smallEngOk ? "Pass" : "Fail",
       smallEnginesNotes: smallEngNotes,
       batteriesCheck: batteriesOk ? "Pass" : "Fail",
-      batteriesNotes,
+  batteriesNotes,
       boatFuelCheck: boatFuelOk ? "Pass" : "Fail",
       boatFuelNotes,
       boatEngineHours: Number($("#weeklyBoatEngineHours")?.value || 0),
@@ -1055,32 +1088,38 @@ async function onSave() {
   const newIssueText = ($("#newIssue")?.value || "").trim();
   const newIssueNote = ($("#newIssueNote")?.value || "").trim();
 
+  setSaveButtonState("saving");
   setStatus("Saving…");
-  await apiPost({
-    action: "saveCheck",
-    stationId: st,
-    apparatusId: ap,
-    submitter,
-    checkType: type,
-    checkPayload,
-    newIssueText,
-    newIssueNote
-  });
+  try {
+    await apiPost({
+      action: "saveCheck",
+      stationId: st,
+      apparatusId: ap,
+      submitter,
+      checkType: type,
+      checkPayload,
+      newIssueText,
+      newIssueNote
+    });
+    // Clear only the new issue fields (so they don’t resend duplicates)
+    if ($("#newIssue")) $("#newIssue").value = "";
+    if ($("#newIssueNote")) $("#newIssueNote").value = "";
 
-  // Clear only the new issue fields (so they don’t resend duplicates)
-  if ($("#newIssue")) $("#newIssue").value = "";
-  if ($("#newIssueNote")) $("#newIssueNote").value = "";
+    // Refresh issues
+    await refreshIssues();
 
-  // Refresh issues
-  await refreshIssues();
+    // Refresh drug master after medical save (so last-known updates)
+    if (type === "medicalDaily") {
+      await loadDrugMaster(ap);
+      renderForm(); // re-render so Last Known Exp updates visually
+    }
 
-  // Refresh drug master after medical save (so last-known updates)
-  if (type === "medicalDaily") {
-    await loadDrugMaster(ap);
-    renderForm(); // re-render so Last Known Exp updates visually
+    setStatus("Saved ✅");
+    setSaveButtonState("saved");
+  } catch (error) {
+    setSaveButtonState("idle");
+    throw error;
   }
-
-  setStatus("Saved ✅");
 }
 
 /* ---------------- Events ---------------- */
