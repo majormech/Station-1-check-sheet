@@ -22,6 +22,7 @@ const LOCATION_UNITS = new Set([
 ]);
 const EXTRICATION_UNITS = new Set(["E-1","E-4"]);
 let saveButtonResetTimer = null;
+let toastTimer = null;
 
 function normalizeUnitId(id) {
   return String(id || "").trim().toUpperCase();
@@ -54,6 +55,16 @@ function setStatus(msg, isError = false) {
   el.textContent = msg || "";
   el.style.color = isError ? "#c81e1e" : "";
   el.style.fontWeight = isError ? "800" : "700";
+}
+
+function toast(msg, ms = 2200) {
+  const el = $("#toast");
+  const text = $("#toastText");
+  if (!el || !text) return;
+  text.textContent = msg || "Saved";
+  el.classList.add("show");
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), ms);
 }
 
 function setSaveButtonState(state) {
@@ -1116,6 +1127,7 @@ async function onSave() {
 
     setStatus("Saved ✅");
     setSaveButtonState("saved");
+      toast("Saved");
   } catch (error) {
     setSaveButtonState("idle");
     throw error;
