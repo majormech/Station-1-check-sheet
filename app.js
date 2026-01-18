@@ -23,6 +23,7 @@ const LOCATION_UNITS = new Set([
 const EXTRICATION_UNITS = new Set(["E-1","E-4"]);
 let saveButtonResetTimer = null;
 let toastTimer = null;
+let saveModalTimer = null;
 
 function normalizeUnitId(id) {
   return String(id || "").trim().toUpperCase();
@@ -65,6 +66,28 @@ function toast(msg, ms = 2200) {
   el.classList.add("show");
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove("show"), ms);
+}
+
+function hideSaveModal() {
+  const modal = $("#saveModal");
+  if (!modal) return;
+  modal.classList.remove("show");
+  modal.setAttribute("aria-hidden", "true");
+  if (saveModalTimer) {
+    clearTimeout(saveModalTimer);
+    saveModalTimer = null;
+  }
+}
+
+function showSaveModal(message = "Saved") {
+  const modal = $("#saveModal");
+  const text = $("#saveModalText");
+  if (!modal || !text) return;
+  text.textContent = message;
+  modal.classList.add("show");
+  modal.setAttribute("aria-hidden", "false");
+  if (saveModalTimer) clearTimeout(saveModalTimer);
+  saveModalTimer = setTimeout(() => hideSaveModal(), 5000);
 }
 
 function setSaveButtonState(state) {
@@ -1127,7 +1150,7 @@ async function onSave() {
 
     setStatus("Saved ✅");
     setSaveButtonState("saved");
-      toast("Saved");
+    showSaveModal("Saved");
   } catch (error) {
     setSaveButtonState("idle");
     throw error;
@@ -1179,6 +1202,7 @@ async function boot() {
   $("#apparatus")?.addEventListener("change", () => onApparatusChange().catch(e => setStatus(e.message, true)));
   $("#checkType")?.addEventListener("change", () => onCheckTypeChange().catch(e => setStatus(e.message, true)));
   $("#location")?.addEventListener("input", saveLocation);
+  $("#saveModalOk")?.addEventListener("click", hideSaveModal);
   $("#saveBtn")?.addEventListener("click", () => {
     savePrefs();
     onSave().catch(e => setStatus(e.message, true));
