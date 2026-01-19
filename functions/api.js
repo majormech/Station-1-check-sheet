@@ -239,7 +239,11 @@ async function handlePost_(env, url, action, body, context) {
     const columnMap = {
       issuesByStation: "issues_emails",
       drugsAllByStation: "drugs_all_emails",
-      drugsPrimaryByStation: "drugs_primary_emails"
+ drugsPrimaryByStation: "drugs_primary_emails",
+      oosScbaByStation: "oos_scba_emails",
+      oosScubaByStation: "oos_scuba_emails",
+      oosSawsByStation: "oos_saw_emails",
+      oosGasByStation: "oos_gas_emails"
     };
     const column = columnMap[kind];
     if (!column) return jsonError_(400, "Unknown kind");
@@ -255,8 +259,13 @@ async function handlePost_(env, url, action, body, context) {
     const migration = String(body.migration || "").trim();
     const sql = String(body.sql || "").trim();
     const user = String(body.user || "").trim();
-     const allowed = new Set(["001_d1_schema.sql", "002_backfill_checks_summary.sql", "003_gas_monitor_repairs.sql"]);
-
+     const allowed = new Set([
+       "001_d1_schema.sql",
+       "002_backfill_checks_summary.sql",
+       "003_gas_monitor_repairs.sql",
+       "004_oos_equipment_emails.sql"
+     ]);
+    
     if (!migration || !sql) return jsonError_(400, "Missing migration or sql");
     if (!allowed.has(migration)) return jsonError_(400, "Unknown migration");
     if (!user) return jsonError_(400, "Missing user");
@@ -344,27 +353,43 @@ async function handlePost_(env, url, action, body, context) {
     const drugsAllByStation = emailConfig.drugsAllByStation || {};
     const drugsPrimaryByStation = emailConfig.drugsPrimaryByStation || {};
     const masterIssues = emailConfig.masterIssues || [];
-
+    const oosScbaByStation = emailConfig.oosScbaByStation || {};
+    const oosScubaByStation = emailConfig.oosScubaByStation || {};
+    const oosSawsByStation = emailConfig.oosSawsByStation || {};
+    const oosGasByStation = emailConfig.oosGasByStation || {};
+     
     const stationIds = new Set([
       ...Object.keys(issuesByStation || {}),
       ...Object.keys(drugsAllByStation || {}),
-      ...Object.keys(drugsPrimaryByStation || {})
+      ...Object.keys(drugsPrimaryByStation || {}),
+      ...Object.keys(oosScbaByStation || {}),
+      ...Object.keys(oosScubaByStation || {}),
+      ...Object.keys(oosSawsByStation || {}),
+      ...Object.keys(oosGasByStation || {})
     ]);
 
     for (const stationId of stationIds) {
       const listIssues = Array.isArray(issuesByStation[stationId]) ? issuesByStation[stationId] : [];
       const listAll = Array.isArray(drugsAllByStation[stationId]) ? drugsAllByStation[stationId] : [];
       const listPrimary = Array.isArray(drugsPrimaryByStation[stationId]) ? drugsPrimaryByStation[stationId] : [];
+      const listScba = Array.isArray(oosScbaByStation[stationId]) ? oosScbaByStation[stationId] : [];
+      const listScuba = Array.isArray(oosScubaByStation[stationId]) ? oosScubaByStation[stationId] : [];
+      const listSaws = Array.isArray(oosSawsByStation[stationId]) ? oosSawsByStation[stationId] : [];
+      const listGas = Array.isArray(oosGasByStation[stationId]) ? oosGasByStation[stationId] : [];
 
       await db
         .prepare(
-          "INSERT INTO email_config (station_id, issues_emails, drugs_all_emails, drugs_primary_emails) VALUES (?, ?, ?, ?) ON CONFLICT(station_id) DO UPDATE SET issues_emails = excluded.issues_emails, drugs_all_emails = excluded.drugs_all_emails, drugs_primary_emails = excluded.drugs_primary_emails"
+        "INSERT INTO email_config (station_id, issues_emails, drugs_all_emails, drugs_primary_emails, oos_scba_emails, oos_scuba_emails, oos_saw_emails, oos_gas_emails) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(station_id) DO UPDATE SET issues_emails = excluded.issues_emails, drugs_all_emails = excluded.drugs_all_emails, drugs_primary_emails = excluded.drugs_primary_emails, oos_scba_emails = excluded.oos_scba_emails, oos_scuba_emails = excluded.oos_scuba_emails, oos_saw_emails = excluded.oos_saw_emails, oos_gas_emails = excluded.oos_gas_emails"  
         )
         .bind(
           String(stationId || "").trim(),
           listIssues.join("\n"),
           listAll.join("\n"),
-          listPrimary.join("\n")
+          listPrimary.join("\n"),
+          listScba.join("\n"),
+          listScuba.join("\n"),
+          listSaws.join("\n"),
+          listGas.join("\n")
         )
         .run();
       emailCount += 1;
@@ -452,7 +477,10 @@ async function handlePost_(env, url, action, body, context) {
     }
 
     const issueRecipients = issueText ? await getIssueRecipients_(db, stationId) : [];
-
+    const oosRecipients = checkType.toLowerCase() === "oosequipment"
+      ? await getOosEquipmentRecipients_(db, stationId, checkPayload.type)
+      : [];
+    
     await triggerSheetsSync_(env, context, {
       type: "check",
       checkId,
@@ -466,7 +494,8 @@ async function handlePost_(env, url, action, body, context) {
       issueStatus: issueResult?.status || "",
       issueText,
       issueNote,
-      issueRecipients
+      issueRecipients,
+      oosRecipients
     });
 
     return json_({ ok: true, saved: true, issue: issueResult });
@@ -625,6 +654,10 @@ async function getEmailConfig_(db) {
     issuesByStation: {},
     drugsAllByStation: {},
     drugsPrimaryByStation: {},
+    oosScbaByStation: {},
+    oosScubaByStation: {},
+    oosSawsByStation: {},
+    oosGasByStation: {},
     masterIssues: []
   };
 
@@ -634,13 +667,21 @@ async function getEmailConfig_(db) {
     const issues = splitEmails_(row.issues_emails);
     const drugsAll = splitEmails_(row.drugs_all_emails);
     const drugsPrimary = splitEmails_(row.drugs_primary_emails);
-
+const oosScba = splitEmails_(row.oos_scba_emails);
+    const oosScuba = splitEmails_(row.oos_scuba_emails);
+    const oosSaws = splitEmails_(row.oos_saw_emails);
+    const oosGas = splitEmails_(row.oos_gas_emails);
+    
     if (stationId === "MASTER") {
       config.masterIssues = issues;
     } else {
       config.issuesByStation[stationId] = issues;
       config.drugsAllByStation[stationId] = drugsAll;
       config.drugsPrimaryByStation[stationId] = drugsPrimary;
+      config.oosScbaByStation[stationId] = oosScba;
+      config.oosScubaByStation[stationId] = oosScuba;
+      config.oosSawsByStation[stationId] = oosSaws;
+      config.oosGasByStation[stationId] = oosGas;
     }
   }
 
@@ -666,6 +707,47 @@ async function getIssueRecipients_(db, stationId) {
     recipients.push(...splitEmails_(row.issues_emails));
   }
   return Array.from(new Set(recipients));
+}
+
+function normalizeOosEquipmentGroup_(equipmentType) {
+  const value = String(equipmentType || "").trim().toLowerCase();
+  if (!value) return "";
+  if (value.startsWith("scba")) return "scba";
+  if (value.startsWith("scuba") || value === "dive equipment") return "scuba";
+  if (value.includes("saw")) return "saws";
+  if (value.includes("gas") || value.includes("monitor")) return "gas";
+  if (value === "other") return "other";
+  return "";
+}
+
+async function getOosEquipmentRecipients_(db, stationId, equipmentType) {
+  const target = String(stationId || "").trim();
+  if (!target) return [];
+  const group = normalizeOosEquipmentGroup_(equipmentType);
+  if (!group) return [];
+
+  if (group === "other") {
+    const row = await db
+      .prepare("SELECT issues_emails FROM email_config WHERE station_id = ?")
+      .bind("MASTER")
+      .first();
+    return Array.from(new Set(splitEmails_(row?.issues_emails)));
+  }
+
+  const columnMap = {
+    scba: "oos_scba_emails",
+    scuba: "oos_scuba_emails",
+    saws: "oos_saw_emails",
+    gas: "oos_gas_emails"
+  };
+  const column = columnMap[group];
+  if (!column) return [];
+
+  const row = await db
+    .prepare(`SELECT ${column} AS emails FROM email_config WHERE station_id = ?`)
+    .bind(target)
+    .first();
+  return Array.from(new Set(splitEmails_(row?.emails)));
 }
 
 async function buildChecksStatusForUnit_(db, unit, weeklyConfig) {
