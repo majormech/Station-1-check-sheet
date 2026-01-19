@@ -559,6 +559,50 @@ function formWrap(html) {
   return `<div>${html}</div>`;
 }
 
+const OOS_EQUIPMENT_TYPES = [
+  "SCBA Mask",
+  "SCBA Bottle",
+  "SCBA Air pack",
+  "Roof Saw",
+  "Rotary Saw",
+  "4-Gas Monitor",
+  "CO2 Monitor",
+  "H2S Monitor",
+  "SCUBA Bottle",
+  "BCD",
+  "Dry suit",
+  "Wet Suit",
+  "SCUBA Mask",
+  "SCUBA Regulator",
+  "Dive Equipment",
+  "Hose",
+  "Other"
+];
+
+function updateOosEquipmentTypeDetails_(area) {
+  if (!area) return;
+  const typeValue = area.querySelector("#eqType")?.value || "";
+  const diveWrap = area.querySelector("#eqDiveDetailWrap");
+  const otherWrap = area.querySelector("#eqOtherDetailWrap");
+  const diveInput = area.querySelector("#eqDiveDetail");
+  const otherInput = area.querySelector("#eqOtherDetail");
+  const showDive = typeValue === "Dive Equipment";
+  const showOther = typeValue === "Other";
+
+  if (diveWrap) diveWrap.style.display = showDive ? "" : "none";
+  if (otherWrap) otherWrap.style.display = showOther ? "" : "none";
+
+  if (!showDive && diveInput) diveInput.value = "";
+  if (!showOther && otherInput) otherInput.value = "";
+}
+
+function wireOosEquipmentTypeToggle_(area) {
+  const select = area?.querySelector("#eqType");
+  if (!select) return;
+  updateOosEquipmentTypeDetails_(area);
+  select.addEventListener("change", () => updateOosEquipmentTypeDetails_(area));
+}
+
 function renderForm() {
   const area = $("#formArea");
   if (!area) return;
@@ -898,12 +942,25 @@ function renderForm() {
 
   if (type === "oosEquipment") {
     area.innerHTML = formWrap(`
-      <label>Equipment Type (SCBA/Saw/4-Gas/Bag Monitor/Other)</label><input id="eqType" />
+           <label>Equipment Type</label>
+      <select id="eqType">
+        <option value="">Select equipment</option>
+        ${OOS_EQUIPMENT_TYPES.map((opt) => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join("")}
+      </select>
+      <div id="eqDiveDetailWrap" style="display:none">
+        <label>Dive Equipment Detail</label>
+        <input id="eqDiveDetail" placeholder="Describe dive equipment out of service" />
+      </div>
+      <div id="eqOtherDetailWrap" style="display:none">
+        <label>Other Item Detail</label>
+        <input id="eqOtherDetail" placeholder="Describe item out of service" />
+      </div>
       <label>Identifier</label><input id="eqIdentifier" />
       <label>Reason</label><textarea id="eqReason"></textarea>
       <label>Replacement</label><input id="eqReplacement" />
-      <label>Expected RTS Date (optional)</label><input id="eqRtsDate" type="date" />
+       <label>Where Item Was Left</label><input id="eqLeftLocation" />
     `);
+    wireOosEquipmentTypeToggle_(area);
     return;
   }
 
@@ -1110,12 +1167,23 @@ async function onSave() {
       rtsDate: $("#oosRtsDate")?.value || "",
     };
   } else if (type === "oosEquipment") {
-    checkPayload = {
-      type: $("#eqType")?.value || "",
+    const eqType = $("#eqType")?.value || "";
+    const diveDetail = $("#eqDiveDetail")?.value?.trim() || "";
+    const otherDetail = $("#eqOtherDetail")?.value?.trim() || "";
+    if (eqType === "Dive Equipment" && !diveDetail) {
+      throw new Error("Dive Equipment detail is required.");
+    }
+    if (eqType === "Other" && !otherDetail) {
+      throw new Error("Other item detail is required.");
+    }
+     checkPayload = {
+     type: eqType,
+      typeDetail: diveDetail,
+      otherDetail,
       identifier: $("#eqIdentifier")?.value || "",
       reason: $("#eqReason")?.value || "",
       replacement: $("#eqReplacement")?.value || "",
-      rtsDate: $("#eqRtsDate")?.value || "",
+      leftLocation: $("#eqLeftLocation")?.value || "",
     };
   }
 
