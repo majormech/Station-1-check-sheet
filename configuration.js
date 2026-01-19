@@ -109,7 +109,7 @@ function renderWeeklyConfig(cfg) {
     row.querySelector(`button[data-save="${it.key}"]`)?.addEventListener("click", async () => {
       try {
         const weekday = row.querySelector(`select[data-key="${it.key}"]`).value;
-        const user = adminName();
+              const user = adminName();
         await apiPost({ action: "setWeeklyDay", checkKey: it.key, weekday, user });
         toast(`${it.label} set to ${weekday}`);
         await loadWeeklyConfig(); // refresh
@@ -134,6 +134,10 @@ let EMAIL_CONFIG = {
   issuesByStation: {},
   drugsAllByStation: {},
   drugsPrimaryByStation: {},
+  oosScbaByStation: {},
+  oosScubaByStation: {},
+  oosSawsByStation: {},
+  oosGasByStation: {},
   masterIssues: []
 };
 let STATION_LIST = [];
@@ -179,12 +183,20 @@ function renderEmailConfigForStation(stationId) {
   const issuesBox = $("#issuesEmails");
   const drugAllBox = $("#drugAllEmails");
   const drugPrimaryBox = $("#drugPrimaryEmails");
+  const oosScbaBox = $("#oosScbaEmails");
+  const oosScubaBox = $("#oosScubaEmails");
+  const oosSawsBox = $("#oosSawsEmails");
+  const oosGasBox = $("#oosGasEmails");
   const masterBox = $("#masterIssuesEmails");
   if (!issuesBox || !drugAllBox || !drugPrimaryBox || !masterBox) return;
 
   issuesBox.value = (EMAIL_CONFIG.issuesByStation?.[stationId] || []).join("\n");
   drugAllBox.value = (EMAIL_CONFIG.drugsAllByStation?.[stationId] || []).join("\n");
   drugPrimaryBox.value = (EMAIL_CONFIG.drugsPrimaryByStation?.[stationId] || []).join("\n");
+  if (oosScbaBox) oosScbaBox.value = (EMAIL_CONFIG.oosScbaByStation?.[stationId] || []).join("\n");
+  if (oosScubaBox) oosScubaBox.value = (EMAIL_CONFIG.oosScubaByStation?.[stationId] || []).join("\n");
+  if (oosSawsBox) oosSawsBox.value = (EMAIL_CONFIG.oosSawsByStation?.[stationId] || []).join("\n");
+  if (oosGasBox) oosGasBox.value = (EMAIL_CONFIG.oosGasByStation?.[stationId] || []).join("\n");
   masterBox.value = (EMAIL_CONFIG.masterIssues || []).join("\n");
 }
 
@@ -202,6 +214,10 @@ async function saveEmailConfigForStation() {
   const issues = normalizeEmails($("#issuesEmails")?.value || "");
   const drugAll = normalizeEmails($("#drugAllEmails")?.value || "");
   const drugPrimary = normalizeEmails($("#drugPrimaryEmails")?.value || "");
+  const oosScba = normalizeEmails($("#oosScbaEmails")?.value || "");
+  const oosScuba = normalizeEmails($("#oosScubaEmails")?.value || "");
+  const oosSaws = normalizeEmails($("#oosSawsEmails")?.value || "");
+  const oosGas = normalizeEmails($("#oosGasEmails")?.value || "");
 
   await apiPost({
     action: "setEmailConfig",
@@ -225,6 +241,38 @@ async function saveEmailConfigForStation() {
     stationId,
     kind: "drugsPrimaryByStation",
     emails: drugPrimary ? drugPrimary.split("\n") : []
+  });
+
+  await apiPost({
+    action: "setEmailConfig",
+    user,
+    stationId,
+    kind: "oosScbaByStation",
+    emails: oosScba ? oosScba.split("\n") : []
+  });
+
+  await apiPost({
+    action: "setEmailConfig",
+    user,
+    stationId,
+    kind: "oosScubaByStation",
+    emails: oosScuba ? oosScuba.split("\n") : []
+  });
+
+  await apiPost({
+    action: "setEmailConfig",
+    user,
+    stationId,
+    kind: "oosSawsByStation",
+    emails: oosSaws ? oosSaws.split("\n") : []
+  });
+
+  await apiPost({
+    action: "setEmailConfig",
+    user,
+    stationId,
+    kind: "oosGasByStation",
+    emails: oosGas ? oosGas.split("\n") : []
   });
 
   await loadEmailConfig();
@@ -279,7 +327,7 @@ async function importFromSheets() {
   try {
     const res = await apiPost({ action: "importFromSheets", user });
     const summary = res?.summary || {};
-    toast(`Imported stations: ${summary.stations || 0}, apparatus: ${summary.apparatus || 0}, drugs: ${summary.drugs || 0}`);
+   toast(`Imported stations: ${summary.stations || 0}, apparatus: ${summary.apparatus || 0}, drugs: ${summary.drugs || 0}`);
     await loadStations();
     await loadWeeklyConfig();
     await loadEmailConfig();
@@ -304,7 +352,7 @@ async function boot() {
     catch (e) { toast(e.message, 3200); }
   });
 
-    $("#btnRunSchemaMigration")?.addEventListener("click", async () => {
+  $("#btnRunSchemaMigration")?.addEventListener("click", async () => {
     try { await runMigration("001_d1_schema.sql", "D1 schema"); }
     catch (e) { toast(e.message, 3200); }
   });
@@ -314,7 +362,12 @@ async function boot() {
     catch (e) { toast(e.message, 3200); }
   });
 
-     $("#btnImportSheets")?.addEventListener("click", async () => {
+  $("#btnRunOosEmailMigration")?.addEventListener("click", async () => {
+    try { await runMigration("004_oos_equipment_emails.sql", "OOS equipment email lists"); }
+    catch (e) { toast(e.message, 3200); }
+  });
+
+  $("#btnImportSheets")?.addEventListener("click", async () => {
     try { await importFromSheets(); }
     catch (e) { toast(e.message, 3200); }
   });
