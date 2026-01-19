@@ -77,7 +77,11 @@ CREATE TABLE IF NOT EXISTS email_config (
   station_id TEXT PRIMARY KEY,
   issues_emails TEXT,
   drugs_all_emails TEXT,
-  drugs_primary_emails TEXT
+drugs_primary_emails TEXT,
+  oos_scba_emails TEXT,
+  oos_scuba_emails TEXT,
+  oos_saw_emails TEXT,
+  oos_gas_emails TEXT
 );
 
 -- Medical email alerts (optional)
