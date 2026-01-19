@@ -168,7 +168,7 @@
       <div class="note">These lists control issue notifications and drug expiration warnings.</div>
 
       <div class="row3" style="margin-top:12px">
-        <div>
+            <div>
           <label for="emailStation">Station</label>
           <select id="emailStation"></select>
         </div>
@@ -193,6 +193,20 @@
 
       <div class="hr"></div>
 
+      <label for="oosScbaEmails">OOS Equipment Emails - SCBA (SCBA Mask, SCBA Bottle, SCBA Air pack)</label>
+      <textarea id="oosScbaEmails" placeholder="one email per line"></textarea>
+
+      <label for="oosScubaEmails">OOS Equipment Emails - SCUBA (SCUBA Bottle, BCD, Dry suit, Wet Suit, SCUBA Mask, SCUBA Regulator, Dive Equipment)</label>
+      <textarea id="oosScubaEmails" placeholder="one email per line"></textarea>
+
+      <label for="oosSawsEmails">OOS Equipment Emails - Saws (Roof Saw, Rotary Saw)</label>
+      <textarea id="oosSawsEmails" placeholder="one email per line"></textarea>
+
+      <label for="oosGasEmails">OOS Equipment Emails - Gas Monitors (4-Gas Monitor, CO2 Monitor, H2S Monitor)</label>
+      <textarea id="oosGasEmails" placeholder="one email per line"></textarea>
+
+      <div class="hr"></div>
+
       <label for="masterIssuesEmails">Master Issues Emails (All Stations)</label>
       <textarea id="masterIssuesEmails" placeholder="one email per line"></textarea>
     </section>
@@ -209,6 +223,10 @@
         <div>
           <label>&nbsp;</label>
           <button class="btn" id="btnRunBackfillMigration" type="button">Run 002 Backfill Checks Summary</button>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button class="btn" id="btnRunOosEmailMigration" type="button">Run 004 OOS Equipment Emails</button>
         </div>
       </div>
     </section>
