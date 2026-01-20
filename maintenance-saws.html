@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DFD — Saw Maintenance</title>
+  <style>
+    :root{
+      --brand:#c41212;
+      --brand-ink:#fff;
+      --ink:#111;
+      --muted:#666;
+      --bg:#f6f7f8;
+      --card:#fff;
+      --line:#e5e7eb;
+      --danger:#c81e1e;
+      --warn:#b45309;
+      --ok:#1a7f37;
+      --info:#1f4e8c;
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      background:var(--bg);
+      color:var(--ink);
+    }
+    header{
+      position:sticky; top:0; z-index:10;
+      background:var(--brand); color:var(--brand-ink);
+      padding:14px 16px;
+      display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    }
+    header h1{ margin:0; font-size:18px; }
+    header a{
+      color:#fff; text-decoration:none; font-weight:700;
+      border:1px solid rgba(255,255,255,.35);
+      padding:6px 10px; border-radius:999px;
+    }
+    main{ max-width:1100px; margin:0 auto; padding:16px; }
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:14px;
+      box-shadow:0 6px 16px rgba(0,0,0,.06);
+      margin-bottom:12px;
+    }
+    .row{ display:grid; gap:12px; }
+    @media (min-width: 760px){
+      .row{ grid-template-columns: 1fr 1fr; }
+    }
+    label{ display:block; font-weight:700; margin-bottom:6px; }
+    input, select, textarea, button{
+      width:100%; padding:10px 12px; border-radius:10px; border:1px solid #d7dbe0;
+      font:inherit; background:#fff;
+    }
+    textarea{ min-height:80px; resize:vertical; }
+    .pill{
+      display:inline-flex; align-items:center; gap:6px;
+      padding:4px 10px; border-radius:999px; font-size:12px; font-weight:800;
+      border:1px solid rgba(0,0,0,.08);
+    }
+    .pill.danger{ background:rgba(200,30,30,.12); color:var(--danger); }
+    .pill.warn{ background:rgba(245,158,11,.18); color:var(--warn); }
+    .pill.ok{ background:rgba(26,127,55,.12); color:var(--ok); }
+    .pill.info{ background:rgba(31,78,140,.12); color:var(--info); }
+    .pill.muted{ background:#eef1f5; color:#374151; }
+    .muted{ color:var(--muted); font-size:12px; }
+    .toolbar{ display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+    .btn{
+      background:var(--brand); color:#fff; border:none; cursor:pointer; font-weight:800;
+      padding:10px 12px; border-radius:10px;
+    }
+    .btn.secondary{ background:#111; }
+    .grid{
+      display:grid; gap:12px;
+    }
+    @media (min-width: 900px){
+      .grid{ grid-template-columns: repeat(2, minmax(0,1fr)); }
+    }
+    .issue{ border-left:4px solid var(--danger); }
+    .statusRow{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .sectionTitle{ margin:0 0 6px; font-size:15px; }
+    .divider{ height:1px; background:var(--line); margin:12px 0; }
+    .empty{ padding:20px; text-align:center; color:var(--muted); }
+  </style>
+</head>
+<body data-maintenance-group="saws">
+  <header>
+    <h1>Saw Maintenance</h1>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <a href="/index.html">Back to Checks</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="card">
+      <div class="row">
+        <div>
+          <label for="techName">Technician Name</label>
+          <input id="techName" placeholder="Name for repair updates" />
+        </div>
+        <div>
+          <label for="search">Filter (Station, Apparatus, Identifier)</label>
+          <input id="search" placeholder="Type to filter" />
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="toolbar">
+        <button class="btn" id="refreshBtn" type="button">Refresh</button>
+        <span id="status" class="muted" role="status" aria-live="polite">Loading…</span>
+      </div>
+      <div class="divider"></div>
+      <div class="statusRow">
+        <span class="pill danger">Needs Service</span>
+        <span class="pill warn">In Repair / Awaiting Parts</span>
+        <span class="pill info">Repaired</span>
+        <span class="pill ok">Returned to Service</span>
+      </div>
+      <div class="muted" style="margin-top:8px">
+        Data is pulled from Out of Service equipment entries for roof and rotary saws.
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="sectionTitle">Active Out of Service Equipment</h2>
+      <div id="activeList" class="grid"></div>
+    </div>
+
+    <div class="card">
+      <h2 class="sectionTitle">Returned to Service</h2>
+      <div id="completedList" class="grid"></div>
+    </div>
+  </main>
+
+  <script src="/maintenance.js"></script>
+</body>
+</html>
