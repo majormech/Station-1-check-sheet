@@ -8,7 +8,8 @@ const STATUS_OPTIONS = [
   { value: "Returned to Service", tone: "ok" }
 ];
 
-const TECH_STORAGE_KEY = "dfd_gas_monitor_tech";
+const GROUP = document.body?.dataset?.maintenanceGroup || "";
+const TECH_STORAGE_KEY = `dfd_maintenance_tech_${GROUP || "general"}`;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -72,6 +73,7 @@ function setStatus(msg, isError = false) {
 
 function loadTechName() {
   const saved = localStorage.getItem(TECH_STORAGE_KEY) || "";
+const saved = localStorage.getItem(TECH_STORAGE_KEY) || "";
   const input = $("#techName");
   if (input) input.value = saved;
 }
@@ -96,6 +98,8 @@ function matchesFilter(item, filter) {
     item.stationId,
     item.apparatusId,
     item.type,
+    item.typeDetail,
+    item.otherDetail,
     item.identifier,
     item.reason,
     item.replacement
@@ -116,6 +120,17 @@ function buildStatusSelect(current) {
   `;
 }
 
+function displayType(item) {
+  if (item.typeDetail) return `${item.type} — ${item.typeDetail}`;
+  if (item.otherDetail) return `${item.type} — ${item.otherDetail}`;
+  return item.type || "Equipment";
+}
+
+function renderOptionalLine(label, value) {
+  if (!value) return "";
+  return `<div><b>${escapeHtml(label)}:</b> ${escapeHtml(value)}</div>`;
+}
+
 function renderCard(item) {
   const status = item.repair?.status || "Needs Service";
   const tone = getStatusTone(status);
@@ -126,7 +141,7 @@ function renderCard(item) {
   return `
     <div class="card issue">
       <div class="statusRow" style="justify-content:space-between;">
-        <div style="font-weight:800; font-size:16px;">${escapeHtml(item.type || "Gas Monitor")}</div>
+        <div style="font-weight:800; font-size:16px;">${escapeHtml(displayType(item))}</div>
         <span class="pill ${escapeHtml(tone)}">${escapeHtml(status)}</span>
       </div>
       <div class="muted" style="margin-top:4px;">
@@ -139,8 +154,10 @@ function renderCard(item) {
       </div>
       <div class="muted">Station ${escapeHtml(item.stationId || "—")} · ${escapeHtml(item.apparatusId || "—")}</div>
       <div style="margin-top:8px;">
-        <div><b>Reason:</b> ${escapeHtml(item.reason || "—")}</div>
-        <div><b>Replacement Monitor:</b> ${escapeHtml(item.replacement || "—")}</div>
+        ${renderOptionalLine("Reason", item.reason || "—")}
+        ${renderOptionalLine("Replacement", item.replacement || "—")}
+        ${renderOptionalLine("Item Left At", item.leftLocation || "")}
+        ${renderOptionalLine("Return to Service Date", item.rtsDate || "")}
       </div>
       <div class="divider"></div>
       <div class="row">
@@ -175,7 +192,7 @@ function renderList(items) {
   const completedList = $("#completedList");
 
   if (activeList) {
-    activeList.innerHTML = active.length ? active.map(renderCard).join("") : "<div class=\"empty\">No active out of service monitors.</div>";
+    activeList.innerHTML = active.length ? active.map(renderCard).join("") : "<div class=\"empty\">No active out of service equipment.</div>";
   }
   if (completedList) {
     completedList.innerHTML = completed.length ? completed.map(renderCard).join("") : "<div class=\"empty\">No completed repairs yet.</div>";
@@ -189,12 +206,16 @@ function renderList(items) {
 let CACHE = [];
 
 async function loadMaintenance() {
+  if (!GROUP) {
+    setStatus("Missing maintenance group.", true);
+    return;
+  }
   setStatus("Loading…");
   try {
-    const res = await apiGet({ action: "getGasMonitorMaintenance" });
+    const res = await apiGet({ action: "getOosEquipmentMaintenance", group: GROUP });
     CACHE = res.items || [];
     renderList(CACHE);
-    setStatus(`Loaded ${CACHE.length} monitor(s).`);
+    setStatus(`Loaded ${CACHE.length} item(s).`);
   } catch (err) {
     setStatus(err.message || "Failed to load", true);
   }
@@ -217,7 +238,7 @@ async function saveRepair(checkId) {
   setStatus("Saving update…");
   try {
     await apiPost({
-      action: "upsertGasMonitorRepair",
+      action: "upsertOosEquipmentRepair",
       checkId,
       status,
       technician,
