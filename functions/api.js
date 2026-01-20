@@ -103,40 +103,16 @@ async function handleGet_(env, url, action) {
     return json_({ ok: true, issues: normalizeIssues_(issues.results || []) });
   }
 
-   if (action === "getgasmonitormaintenance") {
-    const rows = await db
-      .prepare(
-        "SELECT id, station_id, apparatus_id, submitter, payload_json, created_at FROM checks WHERE category = ? ORDER BY created_at DESC"
-      )
-      .bind("oosEquipment")
-      .all();
+if (action === "getoosequipmentmaintenance") {
+    const group = String(url.searchParams.get("group") || "").trim().toLowerCase();
+    if (!group) return jsonError_(400, "Missing maintenance group");
+    const items = await fetchOosEquipmentMaintenance_(db, group);
+    return json_({ ok: true, items });
+  }
 
-    const items = [];
-    for (const row of rows.results || []) {
-      const payload = safeJsonParse_(row.payload_json) || {};
-      const type = String(payload.type || "").trim();
-      if (!isGasMonitorType_(type)) continue;
-      items.push({
-        checkId: row.id,
-        stationId: row.station_id,
-        apparatusId: row.apparatus_id,
-        submitter: row.submitter,
-        createdAt: row.created_at,
-        type,
-        identifier: String(payload.identifier || "").trim(),
-        reason: String(payload.reason || "").trim(),
-        replacement: String(payload.replacement || "").trim(),
-        rtsDate: String(payload.rtsDate || "").trim()
-      });
-    }
-
-    const repairsMap = await fetchGasMonitorRepairs_(db, items.map((item) => item.checkId));
-    const enriched = items.map((item) => ({
-      ...item,
-      repair: repairsMap.get(item.checkId) || null
-    }));
-
-    return json_({ ok: true, items: enriched });
+  if (action === "getgasmonitormaintenance") {
+    const items = await fetchOosEquipmentMaintenance_(db, "gas");
+    return json_({ ok: true, items });
   }
 
    if (action === "listissues") {
@@ -544,7 +520,7 @@ async function handlePost_(env, url, action, body, context) {
     return json_({ ok: true, updated: true });
   }
 
-  if (action === "upsertgasmonitorrepair") {
+    if (action === "upsertoosequipmentrepair" || action === "upsertgasmonitorrepair") {
     const checkId = String(body.checkId || "").trim();
     const status = String(body.status || "Needs Service").trim();
     const technician = String(body.technician || "").trim();
@@ -726,6 +702,45 @@ async function getOosEquipmentRecipients_(db, stationId, equipmentType) {
   const group = normalizeOosEquipmentGroup_(equipmentType);
   if (!group) return [];
 
+  async function fetchOosEquipmentMaintenance_(db, group) {
+  const rows = await db
+    .prepare(
+      "SELECT id, station_id, apparatus_id, submitter, payload_json, created_at FROM checks WHERE category = ? ORDER BY created_at DESC"
+    )
+    .bind("oosEquipment")
+    .all();
+
+  const items = [];
+  for (const row of rows.results || []) {
+    const payload = safeJsonParse_(row.payload_json) || {};
+    const type = String(payload.type || "").trim();
+    if (!type) continue;
+    const normalizedGroup = normalizeOosEquipmentGroup_(type);
+    if (normalizedGroup !== group) continue;
+    items.push({
+      checkId: row.id,
+      stationId: row.station_id,
+      apparatusId: row.apparatus_id,
+      submitter: row.submitter,
+      createdAt: row.created_at,
+      type,
+      typeDetail: String(payload.typeDetail || "").trim(),
+      otherDetail: String(payload.otherDetail || "").trim(),
+      identifier: String(payload.identifier || "").trim(),
+      reason: String(payload.reason || "").trim(),
+      replacement: String(payload.replacement || "").trim(),
+      leftLocation: String(payload.leftLocation || "").trim(),
+      rtsDate: String(payload.rtsDate || "").trim()
+    });
+  }
+
+  const repairsMap = await fetchEquipmentRepairs_(db, items.map((item) => item.checkId));
+  return items.map((item) => ({
+    ...item,
+    repair: repairsMap.get(item.checkId) || null
+  }));
+}
+
   if (group === "other") {
     const row = await db
       .prepare("SELECT issues_emails FROM email_config WHERE station_id = ?")
@@ -882,20 +897,7 @@ function buildCheckSummary_(checkType, payload) {
   return checkType;
 }
 
-function isGasMonitorType_(type) {
-  const value = String(type || "").trim().toLowerCase();
-  if (!value) return false;
-  return (
-    value.includes("4 gas") ||
-    value.includes("4-gas") ||
-    value.includes("four gas") ||
-    value.includes("co2 monitor") ||
-    value.includes("h2s monitor") ||
-    value.includes("gas monitor")
-  );
-}
-
-async function fetchGasMonitorRepairs_(db, checkIds) {
+async function fetchEquipmentRepairs_(db, checkIds) {
   if (!checkIds.length) return new Map();
   const placeholders = checkIds.map(() => "?").join(",");
   const res = await db
