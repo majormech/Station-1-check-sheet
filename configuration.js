@@ -12,6 +12,7 @@
 
 const $ = (s) => document.querySelector(s);
 const WEEKDAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const OOS_GLOBAL_STATION_ID = "OOS_EQUIPMENT";
 
 function toast(msg, ms = 2200) {
   const t = $("#toast");
@@ -134,6 +135,10 @@ let EMAIL_CONFIG = {
   issuesByStation: {},
   drugsAllByStation: {},
   drugsPrimaryByStation: {},
+  oosScbaGlobal: [],
+  oosScubaGlobal: [],
+  oosSawsGlobal: [],
+  oosGasGlobal: [],
   oosScbaByStation: {},
   oosScubaByStation: {},
   oosSawsByStation: {},
@@ -193,10 +198,10 @@ function renderEmailConfigForStation(stationId) {
   issuesBox.value = (EMAIL_CONFIG.issuesByStation?.[stationId] || []).join("\n");
   drugAllBox.value = (EMAIL_CONFIG.drugsAllByStation?.[stationId] || []).join("\n");
   drugPrimaryBox.value = (EMAIL_CONFIG.drugsPrimaryByStation?.[stationId] || []).join("\n");
-  if (oosScbaBox) oosScbaBox.value = (EMAIL_CONFIG.oosScbaByStation?.[stationId] || []).join("\n");
-  if (oosScubaBox) oosScubaBox.value = (EMAIL_CONFIG.oosScubaByStation?.[stationId] || []).join("\n");
-  if (oosSawsBox) oosSawsBox.value = (EMAIL_CONFIG.oosSawsByStation?.[stationId] || []).join("\n");
-  if (oosGasBox) oosGasBox.value = (EMAIL_CONFIG.oosGasByStation?.[stationId] || []).join("\n");
+  if (oosScbaBox) oosScbaBox.value = (EMAIL_CONFIG.oosScbaGlobal || []).join("\n");
+  if (oosScubaBox) oosScubaBox.value = (EMAIL_CONFIG.oosScubaGlobal || []).join("\n");
+  if (oosSawsBox) oosSawsBox.value = (EMAIL_CONFIG.oosSawsGlobal || []).join("\n");
+  if (oosGasBox) oosGasBox.value = (EMAIL_CONFIG.oosGasGlobal || []).join("\n");
   masterBox.value = (EMAIL_CONFIG.masterIssues || []).join("\n");
 }
 
@@ -214,10 +219,6 @@ async function saveEmailConfigForStation() {
   const issues = normalizeEmails($("#issuesEmails")?.value || "");
   const drugAll = normalizeEmails($("#drugAllEmails")?.value || "");
   const drugPrimary = normalizeEmails($("#drugPrimaryEmails")?.value || "");
-  const oosScba = normalizeEmails($("#oosScbaEmails")?.value || "");
-  const oosScuba = normalizeEmails($("#oosScubaEmails")?.value || "");
-  const oosSaws = normalizeEmails($("#oosSawsEmails")?.value || "");
-  const oosGas = normalizeEmails($("#oosGasEmails")?.value || "");
 
   await apiPost({
     action: "setEmailConfig",
@@ -243,40 +244,51 @@ async function saveEmailConfigForStation() {
     emails: drugPrimary ? drugPrimary.split("\n") : []
   });
 
+     await loadEmailConfig();
+  toast("Station email lists saved");
+}
+
+async function saveOosEquipmentEmails() {
+  const user = adminName();
+  const oosScba = normalizeEmails($("#oosScbaEmails")?.value || "");
+  const oosScuba = normalizeEmails($("#oosScubaEmails")?.value || "");
+  const oosSaws = normalizeEmails($("#oosSawsEmails")?.value || "");
+  const oosGas = normalizeEmails($("#oosGasEmails")?.value || "");
+
   await apiPost({
     action: "setEmailConfig",
     user,
-    stationId,
-    kind: "oosScbaByStation",
+    stationId: OOS_GLOBAL_STATION_ID,
+    kind: "oosScbaGlobal",
     emails: oosScba ? oosScba.split("\n") : []
   });
 
   await apiPost({
     action: "setEmailConfig",
     user,
-    stationId,
-    kind: "oosScubaByStation",
+    stationId: OOS_GLOBAL_STATION_ID,
+    kind: "oosScubaGlobal",
     emails: oosScuba ? oosScuba.split("\n") : []
   });
 
   await apiPost({
     action: "setEmailConfig",
     user,
-    stationId,
-    kind: "oosSawsByStation",
+    stationId: OOS_GLOBAL_STATION_ID,
+    kind: "oosSawsGlobal",
     emails: oosSaws ? oosSaws.split("\n") : []
   });
 
   await apiPost({
     action: "setEmailConfig",
     user,
-    stationId,
-    kind: "oosGasByStation",
+    stationId: OOS_GLOBAL_STATION_ID,
+    kind: "oosGasGlobal",
     emails: oosGas ? oosGas.split("\n") : []
   });
 
   await loadEmailConfig();
-  toast("Station email lists saved");
+  toast("OOS equipment email lists saved");
 }
 
 async function saveMasterIssuesEmails() {
@@ -349,6 +361,11 @@ async function boot() {
 
   $("#btnSaveMasterEmails")?.addEventListener("click", async () => {
     try { await saveMasterIssuesEmails(); }
+    catch (e) { toast(e.message, 3200); }
+  });
+
+     $("#btnSaveOosEmails")?.addEventListener("click", async () => {
+    try { await saveOosEquipmentEmails(); }
     catch (e) { toast(e.message, 3200); }
   });
 
