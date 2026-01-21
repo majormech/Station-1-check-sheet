@@ -460,6 +460,7 @@ function renderPassFailToggle_(options) {
     notePlaceholder = "Required if unchecked",
     noteTag = "input",
     noteId = key,
+    noteWrapStyle = "",
     toggleClass = "",
     noteClass = ""
   } = options;
@@ -473,7 +474,7 @@ function renderPassFailToggle_(options) {
       <input type="checkbox" class="passFailToggle ${toggleClass}" data-key="${escapeHtml(key)}" data-label="${escapeHtml(dataLabel)}" data-note-id="${escapeHtml(noteId)}" checked />
       ${escapeHtml(label)}
     </label>
-    <div class="failNoteWrap" data-note-id="${escapeHtml(noteId)}">
+      <div class="failNoteWrap" data-note-id="${escapeHtml(noteId)}"${noteWrapStyle ? ` style="${escapeHtml(noteWrapStyle)}"` : ""}>
       <label style="margin-top:6px">${escapeHtml(noteLabel)}</label>
       ${noteField}
     </div>
@@ -877,11 +878,12 @@ function renderForm() {
         <div class="drugRow" style="margin-top:${index === 0 ? 0 : 10}px">
           <div style="font-weight:800;margin-bottom:6px">${escapeHtml(label)}</div>
           ${renderPassFailToggle_({
-            label: "Pass",
+            label: "Checked",
             dataLabel: label,
             key,
             noteLabel: "Failure Reason",
             notePlaceholder: "Required if unchecked",
+            noteWrapStyle: "display:none",
             toggleClass: "batteryPassToggle",
             noteClass: "batteryFailNotes"
           })}
