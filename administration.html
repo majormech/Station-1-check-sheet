@@ -46,6 +46,12 @@
       border-bottom:1px solid rgba(255,255,255,.15);
     }
     .wrap{ max-width:1200px; margin:0 auto; padding:0 14px 60px; }
+        .header-icon{
+      width:32px;
+      height:32px;
+      flex:0 0 auto;
+      object-fit:contain;
+    }
     .headRow{
       display:flex; align-items:center; justify-content:space-between;
       gap:12px; flex-wrap:wrap;
@@ -461,6 +467,7 @@
   <header>
     <div class="wrap">
       <div class="headRow">
+        <img class="header-icon" src="icons/icon-192.png" alt="Decatur Fire icon">
         <div class="title">
           <div class="badgeBrand"></div>
           <div>
@@ -509,6 +516,7 @@
 
           <button class="btn" id="btnRefresh">Refresh</button>
         </div>
+         <img class="header-icon" src="icons/icon-192.png" alt="Decatur Fire icon">
       </div>
     </div>
   </header>
