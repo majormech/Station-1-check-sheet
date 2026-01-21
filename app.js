@@ -554,6 +554,41 @@ function readDailyItems_() {
   return payload;
 }
 
+function readBatteriesWeeklyPayload(showExtrication) {
+  const payload = {};
+  document.querySelectorAll("#formArea .batteryPassToggle").forEach(toggle => {
+    const key = toggle.getAttribute("data-key");
+    const label = toggle.getAttribute("data-label") || key;
+    if (!key) return;
+
+    const notesInput = document.querySelector(`#formArea .batteryFailNotes[data-key="${CSS.escape(key)}"]`);
+    const notes = notesInput?.value?.trim() || "";
+
+    if (!toggle.checked && !notes) {
+      throw new Error(`${label} requires a failure reason.`);
+    }
+
+    payload[key] = toggle.checked ? "Pass" : `Fail: ${notes}`;
+  });
+
+  const baseKeys = ["batteryTools", "gasMonitorCharged", "unitPhoneCharged", "suctionUnit"];
+  const extricationKeys = ["extricationCheck", "spreader", "cutter", "ram", "allCharged"];
+
+  baseKeys.forEach((key) => {
+    payload[key] = payload[key] || "Pass";
+  });
+
+  extricationKeys.forEach((key) => {
+    if (!showExtrication) {
+      payload[key] = "";
+      return;
+    }
+    payload[key] = payload[key] || "Pass";
+  });
+
+  return payload;
+}
+
 /* ---------------- Form rendering ---------------- */
 function formWrap(html) {
   return `<div>${html}</div>`;
@@ -819,20 +854,41 @@ function renderForm() {
 
   if (type === "batteriesWeekly") {
     const showExtrication = EXTRICATION_UNITS.has(normalizeUnitId(apparatusId()));
+    const baseChecks = [
+      { key: "batteryTools", label: "Battery Tools" },
+      { key: "gasMonitorCharged", label: "4-Gas Monitor Charged" },
+      { key: "unitPhoneCharged", label: "Unit Phone Charged" },
+      { key: "suctionUnit", label: "Suction Unit" }
+    ];
+    const extricationChecks = [
+      { key: "extricationCheck", label: "Extrication Check" },
+      { key: "spreader", label: "Spreader" },
+      { key: "cutter", label: "Cutter" },
+      { key: "ram", label: "Ram" },
+      { key: "allCharged", label: "All 6 Batteries Charged" }
+    ];
+    const rows = [
+      ...baseChecks,
+      ...(showExtrication ? extricationChecks : [])
+    ];
+
     area.innerHTML = formWrap(`
-      <label>Battery Tools</label><input id="batteryTools" />
-      <label>4-Gas Monitor Charged</label><input id="gasMonitorCharged" />
-      <label>Unit Phone Charged</label><input id="unitPhoneCharged" />
-      <label>Notes</label><textarea id="batteryNotes"></textarea>
-       ${showExtrication ? `
-        <label>Extrication Check</label><input id="extricationCheck" />
-        <label>Spreader</label><input id="spreader" />
-        <label>Cutter</label><input id="cutter" />
-        <label>Ram</label><input id="ram" />
-        <label>All 6 Batteries Charged</label><input id="allCharged" />
-        <label>Damage Noted</label><input id="damage" />
-      ` : ""}
+      ${rows.map(({ key, label }, index) => `
+        <div class="drugRow" style="margin-top:${index === 0 ? 0 : 10}px">
+          <div style="font-weight:800;margin-bottom:6px">${escapeHtml(label)}</div>
+          ${renderPassFailToggle_({
+            label: "Pass",
+            dataLabel: label,
+            key,
+            noteLabel: "Failure Reason",
+            notePlaceholder: "Required if unchecked",
+            toggleClass: "batteryPassToggle",
+            noteClass: "batteryFailNotes"
+          })}
+        </div>
+      `).join("")}
     `);
+    wirePassFailToggles_(area);
     return;
   }
 
@@ -1096,18 +1152,8 @@ async function onSave() {
   } else if (type === "sawWeekly") {
     checkPayload = readSawWeeklyPayload();
   } else if (type === "batteriesWeekly") {
-    checkPayload = {
-      batteryTools: $("#batteryTools")?.value || "",
-      gasMonitorCharged: $("#gasMonitorCharged")?.value || "",
-      unitPhoneCharged: $("#unitPhoneCharged")?.value || "",
-      notes: $("#batteryNotes")?.value || "",
-      extricationCheck: $("#extricationCheck")?.value || "",
-      spreader: $("#spreader")?.value || "",
-      cutter: $("#cutter")?.value || "",
-      ram: $("#ram")?.value || "",
-      allCharged: $("#allCharged")?.value || "",
-      damage: $("#damage")?.value || "",
-    };
+    const showExtrication = EXTRICATION_UNITS.has(normalizeUnitId(ap));
+    checkPayload = readBatteriesWeeklyPayload(showExtrication);
   } else if (type === "weeklyCheck") {
     const lightsOk = $("#formArea .weeklyLightsToggle")?.checked ?? true;
     const lightsNotes = $("#formArea .weeklyLightsNotes")?.value?.trim() || "";
