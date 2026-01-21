@@ -460,7 +460,6 @@ function renderPassFailToggle_(options) {
     notePlaceholder = "Required if unchecked",
     noteTag = "input",
     noteId = key,
-    noteWrapStyle = "",
     toggleClass = "",
     noteClass = ""
   } = options;
@@ -474,7 +473,7 @@ function renderPassFailToggle_(options) {
       <input type="checkbox" class="passFailToggle ${toggleClass}" data-key="${escapeHtml(key)}" data-label="${escapeHtml(dataLabel)}" data-note-id="${escapeHtml(noteId)}" checked />
       ${escapeHtml(label)}
     </label>
-      <div class="failNoteWrap" data-note-id="${escapeHtml(noteId)}"${noteWrapStyle ? ` style="${escapeHtml(noteWrapStyle)}"` : ""}>
+    <div class="failNoteWrap" data-note-id="${escapeHtml(noteId)}">
       <label style="margin-top:6px">${escapeHtml(noteLabel)}</label>
       ${noteField}
     </div>
@@ -854,7 +853,7 @@ function renderForm() {
   }
 
   if (type === "batteriesWeekly") {
-    const showExtrication = EXTRICATION_UNITS.has(normalizeUnitId(apparatusId()));
+      const showExtrication = EXTRICATION_UNITS.has(normalizeUnitId(apparatusId()));
     const baseChecks = [
       { key: "batteryTools", label: "Battery Tools" },
       { key: "gasMonitorCharged", label: "4-Gas Monitor Charged" },
@@ -872,18 +871,17 @@ function renderForm() {
       ...baseChecks,
       ...(showExtrication ? extricationChecks : [])
     ];
-
+     
     area.innerHTML = formWrap(`
       ${rows.map(({ key, label }, index) => `
         <div class="drugRow" style="margin-top:${index === 0 ? 0 : 10}px">
           <div style="font-weight:800;margin-bottom:6px">${escapeHtml(label)}</div>
           ${renderPassFailToggle_({
-            label: "Checked",
+            label: "Pass",
             dataLabel: label,
             key,
             noteLabel: "Failure Reason",
             notePlaceholder: "Required if unchecked",
-            noteWrapStyle: "display:none",
             toggleClass: "batteryPassToggle",
             noteClass: "batteryFailNotes"
           })}
@@ -1154,8 +1152,8 @@ async function onSave() {
   } else if (type === "sawWeekly") {
     checkPayload = readSawWeeklyPayload();
   } else if (type === "batteriesWeekly") {
-    const showExtrication = EXTRICATION_UNITS.has(normalizeUnitId(ap));
-    checkPayload = readBatteriesWeeklyPayload(showExtrication);
+       const showExtrication = EXTRICATION_UNITS.has(normalizeUnitId(ap));
+    checkPayload = readBatteriesWeeklyPayload(showExtrication);,
   } else if (type === "weeklyCheck") {
     const lightsOk = $("#formArea .weeklyLightsToggle")?.checked ?? true;
     const lightsNotes = $("#formArea .weeklyLightsNotes")?.value?.trim() || "";
