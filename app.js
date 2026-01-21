@@ -1153,7 +1153,7 @@ async function onSave() {
     checkPayload = readSawWeeklyPayload();
   } else if (type === "batteriesWeekly") {
        const showExtrication = EXTRICATION_UNITS.has(normalizeUnitId(ap));
-    checkPayload = readBatteriesWeeklyPayload(showExtrication);,
+    checkPayload = readBatteriesWeeklyPayload(showExtrication);
   } else if (type === "weeklyCheck") {
     const lightsOk = $("#formArea .weeklyLightsToggle")?.checked ?? true;
     const lightsNotes = $("#formArea .weeklyLightsNotes")?.value?.trim() || "";
