@@ -155,7 +155,7 @@ function requirementsFor(apparatusIdRaw) {
   if (isEngine || isTruck) req.pumpWeekly = true;
   if (isTruck || id === "E-5") req.aerialWeekly = true;
   if (isTruck) req.sawWeekly = true;
-  if (EXTRICATION_UNITS.has(id)) req.batteriesWeekly = true;
+  if (isEngine || isTruck) req.batteriesWeekly = true;
 
   if (isRescue || isBattalion || isMabasUnit(id)) req.medicalDaily = false;
 
