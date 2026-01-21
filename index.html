@@ -30,6 +30,12 @@
     }
     header h1{margin:0; font-size:18px}
     header a{
+      .header-icon{
+      width:32px;
+      height:32px;
+      flex:0 0 auto;
+      object-fit:contain;
+    }
       color:#fff; text-decoration:none; font-weight:700;
       border:1px solid rgba(255,255,255,.35); padding:6px 10px; border-radius:999px;
     }
@@ -115,7 +121,9 @@
 
 <body>
   <header>
+    <img class="header-icon" src="icons/icon-192.png" alt="Decatur Fire icon">
     <h1>Decatur Fire — Daily / Weekly Checks (Alpha)</h1>
+    <img class="header-icon" src="icons/icon-192.png" alt="Decatur Fire icon">
   </header>
 
   <main>
