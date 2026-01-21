@@ -266,7 +266,7 @@ function requirementsFor(apparatusIdRaw) {
   if (isEngine || isTruck) req.pumpWeekly = true;
   if (isTruck || id === "E-5") req.aerialWeekly = true;
   if (isTruck) req.sawWeekly = true;
-  if (EXTRICATION_UNITS.has(id)) req.batteriesWeekly = true;
+  if (isEngine || isTruck) req.batteriesWeekly = true;
 
   if (isRescue || isBattalion || isMabasUnit(id)) req.medicalDaily = false;
 
@@ -818,17 +818,20 @@ function renderForm() {
   }
 
   if (type === "batteriesWeekly") {
+    const showExtrication = EXTRICATION_UNITS.has(normalizeUnitId(apparatusId()));
     area.innerHTML = formWrap(`
       <label>Battery Tools</label><input id="batteryTools" />
       <label>4-Gas Monitor Charged</label><input id="gasMonitorCharged" />
       <label>Unit Phone Charged</label><input id="unitPhoneCharged" />
       <label>Notes</label><textarea id="batteryNotes"></textarea>
-      <label>Extrication Check</label><input id="extricationCheck" />
-      <label>Spreader</label><input id="spreader" />
-      <label>Cutter</label><input id="cutter" />
-      <label>Ram</label><input id="ram" />
-      <label>All 6 Batteries Charged</label><input id="allCharged" />
-      <label>Damage Noted</label><input id="damage" />
+       ${showExtrication ? `
+        <label>Extrication Check</label><input id="extricationCheck" />
+        <label>Spreader</label><input id="spreader" />
+        <label>Cutter</label><input id="cutter" />
+        <label>Ram</label><input id="ram" />
+        <label>All 6 Batteries Charged</label><input id="allCharged" />
+        <label>Damage Noted</label><input id="damage" />
+      ` : ""}
     `);
     return;
   }
