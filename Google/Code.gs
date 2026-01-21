@@ -980,7 +980,8 @@ function appendBatteriesWeeklyFromSync_(ts, submitter, unit, payload) {
     payload.cutter || "",
     payload.ram || "",
     payload.allCharged || "",
-    payload.damage || ""
+    payload.damage || "",
+    payload.suctionUnit || ""
   ]);
 }
 
