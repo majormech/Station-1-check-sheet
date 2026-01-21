@@ -206,6 +206,7 @@
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/service-worker.js").then((reg) => {
+        reg.update();
         reg.onupdatefound = () => {
           const nw = reg.installing;
           if (!nw) return;
