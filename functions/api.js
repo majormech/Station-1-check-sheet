@@ -103,6 +103,20 @@ async function handleGet_(env, url, action) {
     return json_({ ok: true, issues: normalizeIssues_(issues.results || []) });
   }
 
+   if (action === "getlastcheck") {
+    const apparatusId = String(url.searchParams.get("apparatusId") || "").trim();
+    const category = String(url.searchParams.get("category") || "").trim();
+    if (!apparatusId || !category) {
+      return jsonError_(400, "Missing apparatusId or category");
+    }
+    const status = await statusFromChecks_(db, apparatusId, category, null);
+    return json_({
+      ok: true,
+      last: status.last,
+      lastRecord: status.lastRecord || null
+    });
+  }
+  
 if (action === "getoosequipmentmaintenance") {
     const group = String(url.searchParams.get("group") || "").trim().toLowerCase();
     if (!group) return jsonError_(400, "Missing maintenance group");
