@@ -24,6 +24,7 @@ const EXTRICATION_UNITS = new Set(["E-1","E-4"]);
 let saveButtonResetTimer = null;
 let toastTimer = null;
 let saveModalTimer = null;
+const LAST_APPARATUS_DAILY = new Map();
 
 function normalizeUnitId(id) {
   return String(id || "").trim().toUpperCase();
@@ -222,6 +223,28 @@ async function apiGetSoft(params) {
     if (m.includes("unknown action")) return null;
     throw e;
   }
+}
+
+function cacheApparatusDaily_(apparatusId, payload) {
+  if (!apparatusId) return;
+  LAST_APPARATUS_DAILY.set(String(apparatusId), payload || null);
+}
+
+function cachedApparatusDaily_(apparatusId) {
+  if (!apparatusId) return null;
+  return LAST_APPARATUS_DAILY.get(String(apparatusId)) || null;
+}
+
+async function loadLastApparatusDaily_(apparatusId) {
+  if (!apparatusId) return null;
+  const res = await apiGetSoft({
+    action: "getLastCheck",
+    apparatusId,
+    category: "apparatusDaily"
+  });
+  const payload = res?.lastRecord?.payload || null;
+  cacheApparatusDaily_(apparatusId, payload);
+  return payload;
 }
 
 /* ---------------- Apparatus requirement rules (Crew UI) ----------------
@@ -492,6 +515,13 @@ function wirePassFailToggles_(root) {
       const show = !toggle.checked;
       if (wrap) wrap.style.display = show ? "" : "none";
       if (noteInput) noteInput.required = show;
+         if (toggle.classList.contains("dailyPassToggle")) {
+        const key = toggle.getAttribute("data-key");
+        if (key) {
+          const card = root.querySelector(`.daily-item[data-daily-key="${CSS.escape(key)}"]`);
+          if (card) card.classList.toggle("daily-item-fail", !toggle.checked);
+        }
+      }
     };
 
     toggle.addEventListener("change", update);
@@ -501,7 +531,7 @@ function wirePassFailToggles_(root) {
 
 function renderDailyItem_(label, key) {
   return `
-    <div class="drugRow" style="margin-top:10px">
+     <div class="drugRow daily-item" data-daily-key="${escapeHtml(key)}" style="margin-top:10px">
       <div style="font-weight:800;margin-bottom:8px">${escapeHtml(label)}</div>
       <div class="row">
         <div>
@@ -552,6 +582,37 @@ function readDailyItems_() {
   }
 
   return payload;
+}
+
+function applyApparatusDailyDefaults_(payload) {
+  if (!payload) return;
+  const setValue = (id, value) => {
+    const el = $(`#${id}`);
+    if (!el) return;
+    if (value === undefined || value === null) return;
+    el.value = String(value);
+  };
+  setValue("mileage", payload.mileage);
+  setValue("engineHours", payload.engineHours);
+  setValue("fuel", payload.fuel);
+  setValue("def", payload.def);
+  setValue("tank", payload.tank);
+
+  const keys = [
+    "knox","radios","lights","scba","spareBottles","rit","flashlights",
+    "tic","gasMonitor","handTools","hydraRam","groundLadders","passports",
+    "extricationTools"
+  ];
+  for (const key of keys) {
+    const item = payload[key] || {};
+    const passFail = String(item.passFail || "Pass").toLowerCase();
+    const notes = item.notes || "";
+    const toggle = document.querySelector(`#formArea .dailyPassToggle[data-key="${CSS.escape(key)}"]`);
+    const notesInput = document.querySelector(`#formArea .dailyFailNotes[data-key="${CSS.escape(key)}"]`);
+    if (toggle) toggle.checked = passFail !== "fail";
+    if (notesInput) notesInput.value = notes;
+    if (toggle) toggle.dispatchEvent(new Event("change", { bubbles: true }));
+  }
 }
 
 function readBatteriesWeeklyPayload(showExtrication) {
@@ -680,6 +741,7 @@ function renderForm() {
       ${showExtrication ? renderDailyItem_("Extrication Equipment", "extricationTools") : ""}
     `);
     wirePassFailToggles_(area);
+     applyApparatusDailyDefaults_(cachedApparatusDaily_(apparatusId()));
     return;
   }
 
@@ -1252,6 +1314,9 @@ async function onSave() {
       newIssueText,
       newIssueNote
     });
+     if (type === "apparatusDaily") {
+      cacheApparatusDaily_(ap, checkPayload);
+    }
     // Clear only the new issue fields (so they don’t resend duplicates)
     if ($("#newIssue")) $("#newIssue").value = "";
     if ($("#newIssueNote")) $("#newIssueNote").value = "";
@@ -1294,6 +1359,7 @@ async function onApparatusChange() {
   // Preload drug master for medical daily if needed
   const ap = apparatusId();
   await loadDrugMaster(ap);
+  await loadLastApparatusDaily_(ap);
 
   renderForm();
   setStatus("Ready.");
@@ -1306,7 +1372,9 @@ async function onCheckTypeChange() {
   if (selectedCheckType() === "medicalDaily") {
     await loadDrugMaster(apparatusId());
   }
-
+if (selectedCheckType() === "apparatusDaily") {
+    await loadLastApparatusDaily_(apparatusId());
+  }
   renderForm();
 }
 
