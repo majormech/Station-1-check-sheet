@@ -29,6 +29,9 @@ input,select,textarea,button{
 .small{ font-size:12px; color:var(--muted); }
 .drug{ display:grid; grid-template-columns: 2fr 1fr 1fr 2fr; gap:10px; margin:8px 0; }
 .rowHint{ padding:10px; border:1px dashed #ddd; border-radius:12px; color:var(--muted); }
+.daily-item{ border:1px solid transparent; border-radius:12px; padding:10px; }
+.daily-item-fail{ border-color:#c41212; background:#ffe9e9; }
+.daily-item-fail .checkLabel{ color:#8a0000; font-weight:800; }
 
 @media (max-width: 900px){
   .row{ grid-template-columns: 1fr; }
