@@ -199,13 +199,27 @@ const CHECK_LABELS = {
   weeklyCheck: "Weekly Check",
 };
 
+function payloadHasFailure_(value) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "string") return value.toLowerCase() === "fail";
+  if (typeof value === "number" || typeof value === "boolean") return false;
+  if (Array.isArray(value)) return value.some(payloadHasFailure_);
+  if (typeof value === "object") {
+    if ("passFail" in value && String(value.passFail || "").toLowerCase() === "fail") return true;
+    return Object.values(value).some(payloadHasFailure_);
+  }
+  return false;
+}
+
 function renderPayloadNode_(value) {
   if (value === null || value === undefined) {
     return `<span class="payload-empty">—</span>`;
   }
 
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return `<span class="payload-value">${escapeHtml(String(value))}</span>`;
+  const text = String(value);
+    const isFail = text.toLowerCase() === "fail";
+    return `<span class="payload-value${isFail ? " payload-fail" : ""}">${escapeHtml(text)}</span>`;
   }
 
   if (Array.isArray(value)) {
@@ -215,7 +229,7 @@ function renderPayloadNode_(value) {
         ${value
           .map(
             (item, idx) => `
-              <div class="payload-row">
+               <div class="payload-row${payloadHasFailure_(item) ? " payload-fail" : ""}">
                 <div class="payload-key">[${idx}]</div>
                 <div class="payload-val">${renderPayloadNode_(item)}</div>
               </div>
@@ -233,16 +247,17 @@ function renderPayloadNode_(value) {
       <div class="payload-list">
         ${entries
           .map(([key, entryVal]) => {
+            const failClass = payloadHasFailure_(entryVal) ? " payload-fail" : "";
             if (entryVal && typeof entryVal === "object") {
               return `
-                <details class="payload-detail" open>
+                  <details class="payload-detail${failClass}" open>
                   <summary><span class="payload-key">${escapeHtml(key)}</span></summary>
                   <div class="payload-nested">${renderPayloadNode_(entryVal)}</div>
                 </details>
               `;
             }
             return `
-              <div class="payload-row">
+              <div class="payload-row${failClass}">
                 <div class="payload-key">${escapeHtml(key)}</div>
                 <div class="payload-val">${renderPayloadNode_(entryVal)}</div>
               </div>
