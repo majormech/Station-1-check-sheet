@@ -515,13 +515,8 @@ function wirePassFailToggles_(root) {
       const show = !toggle.checked;
       if (wrap) wrap.style.display = show ? "" : "none";
       if (noteInput) noteInput.required = show;
-         if (toggle.classList.contains("dailyPassToggle")) {
-        const key = toggle.getAttribute("data-key");
-        if (key) {
-          const card = root.querySelector(`.daily-item[data-daily-key="${CSS.escape(key)}"]`);
-          if (card) card.classList.toggle("daily-item-fail", !toggle.checked);
-        }
-      }
+        const card = toggle.closest(".drugRow, .daily-item");
+      if (card) card.classList.toggle("checklist-fail", !toggle.checked);
     };
 
     toggle.addEventListener("change", update);
