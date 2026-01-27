@@ -384,6 +384,11 @@ async function boot() {
     catch (e) { toast(e.message, 3200); }
   });
 
+   $("#btnRunInventoryBuilderMigration")?.addEventListener("click", async () => {
+    try { await runMigration("005_inventory_builder.sql", "Inventory builder"); }
+    catch (e) { toast(e.message, 3200); }
+  });
+   
   $("#btnImportSheets")?.addEventListener("click", async () => {
     try { await importFromSheets(); }
     catch (e) { toast(e.message, 3200); }
