@@ -67,6 +67,19 @@ function currentGroups() {
   return path ? path.groups : [];
 }
 
+function normalizeGroup(group) {
+  if (!Array.isArray(group.items)) group.items = [];
+  if (!Array.isArray(group.groups)) group.groups = [];
+  return group;
+}
+
+function normalizeGroupTree(groups) {
+  groups.forEach((group) => {
+    normalizeGroup(group);
+    normalizeGroupTree(group.groups);
+  });
+}
+
 async function apiGet(params) {
   const qs = new URLSearchParams(params);
   const res = await fetch(`/api?${qs.toString()}`, { method: "GET" });
@@ -145,89 +158,118 @@ function renderGroups() {
   if (addBtn) addBtn.disabled = false;
 
   const groups = currentGroups();
+  normalizeGroupTree(groups);
   if (!groups.length) {
     container.innerHTML = `<div class="empty">No groups yet. Click “Add Group” to start.</div>`;
     return;
   }
 
   groups.forEach((group) => {
-    const card = document.createElement("div");
-    card.className = "group-card";
-    card.dataset.groupId = group.id;
-
-    const header = document.createElement("div");
-    header.className = "group-header";
-
-    const nameInput = document.createElement("input");
-    nameInput.className = "group-name";
-    nameInput.placeholder = "Group name";
-    nameInput.value = group.name || "";
-
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.className = "btn danger";
-    removeBtn.dataset.action = "remove-group";
-    removeBtn.textContent = "Remove Group";
-
-    header.appendChild(nameInput);
-    header.appendChild(removeBtn);
-
-    const itemsWrap = document.createElement("div");
-    itemsWrap.className = "items";
-
-    if (!group.items.length) {
-      const empty = document.createElement("div");
-      empty.className = "muted";
-      empty.textContent = "No items yet.";
-      itemsWrap.appendChild(empty);
-    } else {
-      group.items.forEach((item) => {
-        const row = document.createElement("div");
-        row.className = "item-row";
-        row.dataset.itemId = item.id;
-
-        const name = document.createElement("input");
-        name.className = "item-name";
-        name.placeholder = "Item name";
-        name.value = item.name || "";
-
-        const part = document.createElement("input");
-        part.className = "item-part";
-        part.placeholder = "Part #";
-        part.value = item.partNumber || "";
-
-        const serial = document.createElement("input");
-        serial.className = "item-serial";
-        serial.placeholder = "Serial #";
-        serial.value = item.serialNumber || "";
-
-        const removeItem = document.createElement("button");
-        removeItem.type = "button";
-        removeItem.className = "btn ghost";
-        removeItem.dataset.action = "remove-item";
-        removeItem.textContent = "Remove";
-
-        row.appendChild(name);
-        row.appendChild(part);
-        row.appendChild(serial);
-        row.appendChild(removeItem);
-        itemsWrap.appendChild(row);
-      });
-    }
-
-    const addItemBtn = document.createElement("button");
-    addItemBtn.type = "button";
-    addItemBtn.className = "btn secondary";
-    addItemBtn.dataset.action = "add-item";
-    addItemBtn.textContent = "Add Item";
-
-    card.appendChild(header);
-    card.appendChild(itemsWrap);
-    card.appendChild(addItemBtn);
+  const card = buildGroupCard(group, 0);
     container.appendChild(card);
   });
 
   setStatus("Changes are stored on this device.");
+}
+
+function buildGroupCard(group, depth) {
+  const card = document.createElement("div");
+  card.className = "group-card";
+  card.dataset.groupId = group.id;
+  card.dataset.depth = String(depth);
+
+  const header = document.createElement("div");
+  header.className = "group-header";
+
+  const nameInput = document.createElement("input");
+  nameInput.className = "group-name";
+  nameInput.placeholder = "Group name";
+  nameInput.value = group.name || "";
+
+  const actions = document.createElement("div");
+  actions.className = "group-actions";
+
+  const addSubgroupBtn = document.createElement("button");
+  addSubgroupBtn.type = "button";
+  addSubgroupBtn.className = "btn secondary";
+  addSubgroupBtn.dataset.action = "add-subgroup";
+  addSubgroupBtn.textContent = "Add Subgroup";
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "btn danger";
+  removeBtn.dataset.action = "remove-group";
+  removeBtn.textContent = "Remove Group";
+
+  actions.appendChild(addSubgroupBtn);
+  actions.appendChild(removeBtn);
+
+  header.appendChild(nameInput);
+  header.appendChild(actions);
+
+  const itemsWrap = document.createElement("div");
+  itemsWrap.className = "items";
+
+  if (!group.items.length) {
+    const empty = document.createElement("div");
+    empty.className = "muted";
+    empty.textContent = group.groups.length ? "No items yet." : "No items or subgroups yet.";
+    itemsWrap.appendChild(empty);
+  } else {
+    group.items.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "item-row";
+      row.dataset.itemId = item.id;
+
+      const name = document.createElement("input");
+      name.className = "item-name";
+      name.placeholder = "Item name";
+      name.value = item.name || "";
+
+      const part = document.createElement("input");
+      part.className = "item-part";
+      part.placeholder = "Part #";
+      part.value = item.partNumber || "";
+
+      const serial = document.createElement("input");
+      serial.className = "item-serial";
+      serial.placeholder = "Serial #";
+      serial.value = item.serialNumber || "";
+
+      const removeItem = document.createElement("button");
+      removeItem.type = "button";
+      removeItem.className = "btn ghost";
+      removeItem.dataset.action = "remove-item";
+      removeItem.textContent = "Remove";
+
+      row.appendChild(name);
+      row.appendChild(part);
+      row.appendChild(serial);
+      row.appendChild(removeItem);
+      itemsWrap.appendChild(row);
+    });
+  }
+
+  const addItemBtn = document.createElement("button");
+  addItemBtn.type = "button";
+  addItemBtn.className = "btn secondary";
+  addItemBtn.dataset.action = "add-item";
+  addItemBtn.textContent = "Add Item";
+
+  card.appendChild(header);
+  card.appendChild(itemsWrap);
+  card.appendChild(addItemBtn);
+
+  if (group.groups.length) {
+    const subgroupWrap = document.createElement("div");
+    subgroupWrap.className = "group-children";
+    group.groups.forEach((child) => {
+      subgroupWrap.appendChild(buildGroupCard(child, depth + 1));
+    });
+    card.appendChild(subgroupWrap);
+  }
+
+  return card;
 }
 
 function addGroup() {
@@ -236,7 +278,8 @@ function addGroup() {
   path.groups.push({
     id: createId(),
     name: "New Group",
-    items: []
+    items: [],
+    groups: []
   });
   saveInventory();
   renderGroups();
@@ -244,15 +287,50 @@ function addGroup() {
 
 function removeGroup(groupId) {
   const groups = currentGroups();
+   normalizeGroupTree(groups);
+  if (removeGroupById(groups, groupId)) {
+    saveInventory();
+    renderGroups();
+  }
+}
+
+function removeGroupById(groups, groupId) {
   const idx = groups.findIndex((group) => group.id === groupId);
-  if (idx === -1) return;
-  groups.splice(idx, 1);
+   if (idx !== -1) {
+    groups.splice(idx, 1);
+    return true;
+  }
+  return groups.some((group) => removeGroupById(group.groups, groupId));
+}
+
+function findGroupById(groups, groupId) {
+  for (const group of groups) {
+    if (group.id === groupId) return group;
+    const found = findGroupById(group.groups, groupId);
+    if (found) return found;
+  }
+  return null;
+}
+
+function addSubgroup(groupId) {
+  const groups = currentGroups();
+  normalizeGroupTree(groups);
+  const parent = findGroupById(groups, groupId);
+  if (!parent) return;
+  parent.groups.push({
+    id: createId(),
+    name: "New Subgroup",
+    items: [],
+    groups: []
+  });
   saveInventory();
   renderGroups();
 }
 
 function addItem(groupId) {
-  const group = currentGroups().find((g) => g.id === groupId);
+  const groups = currentGroups();
+  normalizeGroupTree(groups);
+  const group = findGroupById(groups, groupId);
   if (!group) return;
   group.items.push({
     id: createId(),
@@ -265,7 +343,9 @@ function addItem(groupId) {
 }
 
 function removeItem(groupId, itemId) {
-  const group = currentGroups().find((g) => g.id === groupId);
+  const groups = currentGroups();
+  normalizeGroupTree(groups);
+  const group = findGroupById(groups, groupId);
   if (!group) return;
   group.items = group.items.filter((item) => item.id !== itemId);
   saveInventory();
@@ -273,14 +353,18 @@ function removeItem(groupId, itemId) {
 }
 
 function updateGroupName(groupId, value) {
-  const group = currentGroups().find((g) => g.id === groupId);
+  const groups = currentGroups();
+  normalizeGroupTree(groups);
+  const group = findGroupById(groups, groupId);
   if (!group) return;
   group.name = value;
   saveInventory();
 }
 
 function updateItemField(groupId, itemId, field, value) {
-  const group = currentGroups().find((g) => g.id === groupId);
+   const groups = currentGroups();
+  normalizeGroupTree(groups);
+  const group = findGroupById(groups, groupId);
   if (!group) return;
   const item = group.items.find((i) => i.id === itemId);
   if (!item) return;
@@ -299,8 +383,12 @@ function handleContainerClick(event) {
     addItem(groupId);
   }
 
+  if (action === "add-subgroup" && groupId) {
+    addSubgroup(groupId);
+  }
+  
   if (action === "remove-group" && groupId) {
-    const ok = window.confirm("Remove this group and all its items?");
+    const ok = window.confirm("Remove this group, its items, and any subgroups?");
     if (ok) removeGroup(groupId);
   }
 
