@@ -106,7 +106,7 @@ async function handleGet_(env, url, action) {
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
     const rows = await db
       .prepare(
-        `SELECT station_id, apparatus_id, group_id, group_name, item_id, item_name, part_number, serial_number, action, occurred_at FROM inventory_item_events ${where} ORDER BY occurred_at DESC LIMIT ?`
+        `SELECT station_id, apparatus_id, group_id, group_name, item_id, item_name, part_number, serial_number, completed_by, action, occurred_at FROM inventory_item_events ${where} ORDER BY occurred_at DESC LIMIT ?`
       )
       .bind(...params, limit)
       .all();
@@ -119,6 +119,7 @@ async function handleGet_(env, url, action) {
       itemName: row.item_name,
       partNumber: row.part_number,
       serialNumber: row.serial_number,
+      completedBy: row.completed_by,
       action: row.action,
       occurredAt: row.occurred_at
     }));
@@ -323,7 +324,8 @@ async function handlePost_(env, url, action, body, context) {
        "002_backfill_checks_summary.sql",
        "003_gas_monitor_repairs.sql",
        "004_oos_equipment_emails.sql",
-       "005_inventory_builder.sql"
+       "005_inventory_builder.sql",
+       "006_inventory_completed_by.sql"
      ]);
     
     if (!migration || !sql) return jsonError_(400, "Missing migration or sql");
@@ -367,10 +369,12 @@ async function handlePost_(env, url, action, body, context) {
     }
     const actionType = String(event.action || "").trim();
     if (!actionType) return jsonError_(400, "Missing action");
+    const completedBy = String(event.completedBy || "").trim();
+    if (!completedBy) return jsonError_(400, "Missing completedBy");
     const now = new Date().toISOString();
     await db
       .prepare(
-        "INSERT INTO inventory_item_events (station_id, apparatus_id, group_id, group_name, item_id, item_name, part_number, serial_number, action, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO inventory_item_events (station_id, apparatus_id, group_id, group_name, item_id, item_name, part_number, serial_number, completed_by, action, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .bind(
         stationId,
