@@ -102,6 +102,70 @@
     .divider{ height:1px; background:var(--line); margin:12px 0; }
     .empty{ text-align:center; color:var(--muted); padding:24px 10px; border:1px dashed var(--line); border-radius:12px; }
     .statusRow{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+    .sheet{
+      display:grid;
+      gap:12px;
+    }
+    .sheet-list,
+    .sheet-items,
+    .sheet-subgroups{
+      list-style:none;
+      margin:0;
+      padding:0;
+      display:grid;
+      gap:6px;
+    }
+    .sheet-group{
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px;
+      background:#fff;
+    }
+    .sheet-group-title{
+      font-weight:700;
+      margin-bottom:6px;
+    }
+    .sheet-items li{
+      padding:6px 8px;
+      border-radius:8px;
+      background:var(--bg);
+    }
+    .sheet-subgroups{
+      margin-top:8px;
+      padding-left:10px;
+      border-left:2px solid var(--line);
+    }
+    .table-wrap{
+      overflow:auto;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:#fff;
+    }
+    table{
+      width:100%;
+      border-collapse:collapse;
+      font-size:13px;
+    }
+    th, td{
+      padding:10px;
+      border-bottom:1px solid var(--line);
+      text-align:left;
+      vertical-align:top;
+    }
+    th{
+      background:var(--bg);
+      font-weight:700;
+    }
+    .log-add{ color:#0f6b2b; font-weight:700; }
+    .log-remove{ color:var(--danger); font-weight:700; }
+    .log-header{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+      justify-content:space-between;
+      margin-bottom:8px;
+    }
   </style>
 </head>
 <body>
@@ -138,6 +202,36 @@
       <h2 style="margin:0 0 8px; font-size:16px;">Groups & Items</h2>
       <p class="muted" style="margin:0 0 12px;">Each group can contain multiple groups with multiple items with a name, part number, and serial number.</p>
       <div id="groups" class="items"></div>
+    </section>
+    
+    <section class="card">
+      <h2 style="margin:0 0 8px; font-size:16px;">Apparatus Sheet</h2>
+      <p class="muted" style="margin:0 0 12px;">Read-only snapshot of the current groups and items for the selected apparatus.</p>
+      <div id="apparatusSheet" class="sheet"></div>
+    </section>
+
+    <section class="card">
+      <div class="log-header">
+        <h2 style="margin:0; font-size:16px;">Main Grouping Sheet (Inventory Changes)</h2>
+        <button id="refreshLogBtn" class="btn secondary" type="button">Refresh Log</button>
+      </div>
+      <p class="muted" style="margin:0 0 12px;">Tracks items added and removed across all stations and apparatus.</p>
+      <div class="table-wrap">
+        <table aria-label="Inventory change log">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Station</th>
+              <th>Apparatus</th>
+              <th>Group</th>
+              <th>Item</th>
+              <th>Details</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="inventoryLogBody"></tbody>
+        </table>
+      </div>
     </section>
   </main>
 
