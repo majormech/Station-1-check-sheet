@@ -76,7 +76,23 @@
     @media (min-width: 760px){
       .group-header{ grid-template-columns: 1fr auto; }
     }
+    .group-actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    .group-actions .btn{
+      width:auto;
+      padding:8px 10px;
+    }
     .items{ display:grid; gap:10px; }
+    .group-children{
+      display:grid;
+      gap:12px;
+      padding-left:12px;
+      border-left:2px solid var(--line);
+    }
     .item-row{
       display:grid; gap:10px; align-items:end;
     }
@@ -120,7 +136,7 @@
 
     <section class="card">
       <h2 style="margin:0 0 8px; font-size:16px;">Groups & Items</h2>
-      <p class="muted" style="margin:0 0 12px;">Each group can contain multiple items with a name, part number, and serial number.</p>
+      <p class="muted" style="margin:0 0 12px;">Each group can contain multiple groups with multiple items with a name, part number, and serial number.</p>
       <div id="groups" class="items"></div>
     </section>
   </main>
