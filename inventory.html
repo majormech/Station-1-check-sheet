@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DFD — Inventory</title>
+  <style>
+    :root{
+      --brand:#c41212;
+      --brand-ink:#fff;
+      --ink:#111;
+      --muted:#6b7280;
+      --bg:#f6f7f8;
+      --card:#fff;
+      --line:#e5e7eb;
+      --danger:#c81e1e;
+      --shadow:0 8px 18px rgba(0,0,0,.06);
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      background:var(--bg);
+      color:var(--ink);
+    }
+    header{
+      position:sticky; top:0; z-index:10;
+      background:var(--brand); color:var(--brand-ink);
+      padding:14px 16px;
+      display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    }
+    header h1{ margin:0; font-size:18px; }
+    header a{
+      color:#fff; text-decoration:none; font-weight:700;
+      border:1px solid rgba(255,255,255,.35);
+      padding:6px 10px; border-radius:999px;
+    }
+    main{ max-width:1100px; margin:0 auto; padding:16px; }
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:14px;
+      box-shadow:var(--shadow);
+      margin-bottom:12px;
+    }
+    .row{ display:grid; gap:12px; }
+    @media (min-width: 820px){
+      .row{ grid-template-columns: 1fr 1fr 1fr; }
+    }
+    label{ display:block; font-weight:700; margin-bottom:6px; }
+    input, select, textarea, button{
+      width:100%; padding:10px 12px; border-radius:10px; border:1px solid #d7dbe0;
+      font:inherit; background:#fff;
+    }
+    .muted{ color:var(--muted); font-size:12px; }
+    .toolbar{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+    .btn{
+      background:var(--brand); color:#fff; border:none; cursor:pointer; font-weight:800;
+      padding:10px 12px; border-radius:10px;
+    }
+    .btn.secondary{ background:#111; }
+    .btn.ghost{ background:#fff; color:#111; border:1px solid #d7dbe0; }
+    .btn.danger{ background:var(--danger); }
+    .btn:disabled{ opacity:0.6; cursor:not-allowed; }
+    .group-card{
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:12px;
+      background:#fff;
+      display:grid; gap:10px;
+    }
+    .group-header{
+      display:grid; gap:10px; align-items:center;
+    }
+    @media (min-width: 760px){
+      .group-header{ grid-template-columns: 1fr auto; }
+    }
+    .items{ display:grid; gap:10px; }
+    .item-row{
+      display:grid; gap:10px; align-items:end;
+    }
+    @media (min-width: 980px){
+      .item-row{ grid-template-columns: 2fr 1.2fr 1.2fr auto; }
+    }
+    .divider{ height:1px; background:var(--line); margin:12px 0; }
+    .empty{ text-align:center; color:var(--muted); padding:24px 10px; border:1px dashed var(--line); border-radius:12px; }
+    .statusRow{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Inventory Builder</h1>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <a href="/index.html">Back to Checks</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="card">
+      <div class="row">
+        <div>
+          <label for="station">Station</label>
+          <select id="station"></select>
+        </div>
+        <div>
+          <label for="apparatus">Apparatus</label>
+          <select id="apparatus"></select>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button id="addGroupBtn" class="btn" type="button">Add Group</button>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="statusRow">
+        <div id="status" class="muted" role="status" aria-live="polite">Select a station and apparatus to begin.</div>
+      </div>
+    </div>
+
+    <section class="card">
+      <h2 style="margin:0 0 8px; font-size:16px;">Groups & Items</h2>
+      <p class="muted" style="margin:0 0 12px;">Each group can contain multiple items with a name, part number, and serial number.</p>
+      <div id="groups" class="items"></div>
+    </section>
+  </main>
+
+  <script src="/inventory.js"></script>
+</body>
+</html>
