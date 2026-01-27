@@ -66,6 +66,65 @@ async function handleGet_(env, url, action) {
     });
   }
 
+   if (action === "getinventory") {
+    const stationId = String(url.searchParams.get("stationId") || "").trim();
+    const apparatusId = String(url.searchParams.get("apparatusId") || "").trim();
+    if (!stationId || !apparatusId) {
+      return jsonError_(400, "Missing stationId or apparatusId");
+    }
+    const row = await db
+      .prepare(
+        "SELECT data_json, updated_at FROM inventory_state WHERE station_id = ? AND apparatus_id = ?"
+      )
+      .bind(stationId, apparatusId)
+      .first();
+    let groups = [];
+    if (row?.data_json) {
+      try {
+        groups = JSON.parse(row.data_json) || [];
+      } catch {
+        groups = [];
+      }
+    }
+    return json_({ ok: true, groups, updatedAt: row?.updated_at || null });
+  }
+
+  if (action === "getinventoryevents") {
+    const stationId = String(url.searchParams.get("stationId") || "").trim();
+    const apparatusId = String(url.searchParams.get("apparatusId") || "").trim();
+    const limit = Math.min(Number(url.searchParams.get("limit") || 200), 500);
+    const clauses = [];
+    const params = [];
+    if (stationId) {
+      clauses.push("station_id = ?");
+      params.push(stationId);
+    }
+    if (apparatusId) {
+      clauses.push("apparatus_id = ?");
+      params.push(apparatusId);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = await db
+      .prepare(
+        `SELECT station_id, apparatus_id, group_id, group_name, item_id, item_name, part_number, serial_number, action, occurred_at FROM inventory_item_events ${where} ORDER BY occurred_at DESC LIMIT ?`
+      )
+      .bind(...params, limit)
+      .all();
+    const events = (rows.results || []).map((row) => ({
+      stationId: row.station_id,
+      apparatusId: row.apparatus_id,
+      groupId: row.group_id,
+      groupName: row.group_name,
+      itemId: row.item_id,
+      itemName: row.item_name,
+      partNumber: row.part_number,
+      serialNumber: row.serial_number,
+      action: row.action,
+      occurredAt: row.occurred_at
+    }));
+    return json_({ ok: true, events });
+  }
+
  if (action === "getdrugmaster") {
     const unit = String(url.searchParams.get("unit") || "").trim();
     if (!unit) return jsonError_(400, "Missing unit");
@@ -263,7 +322,8 @@ async function handlePost_(env, url, action, body, context) {
        "001_d1_schema.sql",
        "002_backfill_checks_summary.sql",
        "003_gas_monitor_repairs.sql",
-       "004_oos_equipment_emails.sql"
+       "004_oos_equipment_emails.sql",
+       "005_inventory_builder.sql"
      ]);
     
     if (!migration || !sql) return jsonError_(400, "Missing migration or sql");
@@ -279,6 +339,53 @@ async function handlePost_(env, url, action, body, context) {
     }
 
     return json_({ ok: true, executed: true, migration });
+  }
+
+   if (action === "saveinventory") {
+    const stationId = String(body.stationId || "").trim();
+    const apparatusId = String(body.apparatusId || "").trim();
+    const groups = Array.isArray(body.groups) ? body.groups : [];
+    if (!stationId || !apparatusId) {
+      return jsonError_(400, "Missing stationId or apparatusId");
+    }
+    const now = new Date().toISOString();
+    await db
+      .prepare(
+        "INSERT INTO inventory_state (station_id, apparatus_id, data_json, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(station_id, apparatus_id) DO UPDATE SET data_json = excluded.data_json, updated_at = excluded.updated_at"
+      )
+      .bind(stationId, apparatusId, JSON.stringify(groups), now)
+      .run();
+    return json_({ ok: true, saved: true, updatedAt: now });
+  }
+
+  if (action === "loginventoryevent") {
+    const stationId = String(body.stationId || "").trim();
+    const apparatusId = String(body.apparatusId || "").trim();
+    const event = body.event || {};
+    if (!stationId || !apparatusId) {
+      return jsonError_(400, "Missing stationId or apparatusId");
+    }
+    const actionType = String(event.action || "").trim();
+    if (!actionType) return jsonError_(400, "Missing action");
+    const now = new Date().toISOString();
+    await db
+      .prepare(
+        "INSERT INTO inventory_item_events (station_id, apparatus_id, group_id, group_name, item_id, item_name, part_number, serial_number, action, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .bind(
+        stationId,
+        apparatusId,
+        String(event.groupId || ""),
+        String(event.groupName || ""),
+        String(event.itemId || ""),
+        String(event.itemName || ""),
+        String(event.partNumber || ""),
+        String(event.serialNumber || ""),
+        actionType,
+        now
+      )
+      .run();
+    return json_({ ok: true, logged: true, occurredAt: now });
   }
 
    if (action === "importfromsheets") {
