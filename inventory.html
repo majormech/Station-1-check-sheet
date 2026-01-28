@@ -97,7 +97,69 @@
       display:grid; gap:10px; align-items:end;
     }
     @media (min-width: 980px){
-      .item-row{ grid-template-columns: 2fr 1.2fr 1.2fr auto; }
+     .item-row{ grid-template-columns: 2fr 1.2fr auto; }
+    }
+    .item-card{
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px;
+      background:#fafafa;
+      display:grid;
+      gap:8px;
+    }
+    .item-extra-fields{
+      display:grid;
+      gap:8px;
+    }
+    @media (min-width: 980px){
+      .item-extra-fields{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    .item-extra-actions{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+    }
+    .item-extra-actions .btn{
+      width:auto;
+      padding:6px 10px;
+      font-size:12px;
+    }
+    .photo-grid{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+    }
+    .photo-card{
+      position:relative;
+      width:80px;
+      height:80px;
+      border-radius:10px;
+      overflow:hidden;
+      border:1px solid var(--line);
+      background:#fff;
+    }
+    .photo-card img{
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      display:block;
+    }
+    .photo-remove{
+      position:absolute;
+      top:4px;
+      right:4px;
+      background:rgba(0,0,0,0.65);
+      color:#fff;
+      border:none;
+      border-radius:999px;
+      width:20px;
+      height:20px;
+      font-size:12px;
+      line-height:20px;
+      cursor:pointer;
+    }
+    .note-area{
+      min-height:70px;
     }
     .divider{ height:1px; background:var(--line); margin:12px 0; }
     .empty{ text-align:center; color:var(--muted); padding:24px 10px; border:1px dashed var(--line); border-radius:12px; }
@@ -180,6 +242,10 @@
     <div class="card">
       <div class="row">
         <div>
+          <label for="inventoryWho">Completed By</label>
+          <input id="inventoryWho" placeholder="Name" />
+        </div>
+        <div>
           <label for="station">Station</label>
           <select id="station"></select>
         </div>
@@ -187,9 +253,14 @@
           <label for="apparatus">Apparatus</label>
           <select id="apparatus"></select>
         </div>
+        </div>
+      <div class="row" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
         <div>
           <label>&nbsp;</label>
-          <button id="addGroupBtn" class="btn" type="button">Add Group</button>
+           <div class="toolbar">
+            <button id="addGroupBtn" class="btn" type="button">Add Group</button>
+            <button id="pasteGroupBtn" class="btn ghost" type="button">Paste Group</button>
+          </div>
         </div>
       </div>
       <div class="divider"></div>
@@ -200,7 +271,7 @@
 
     <section class="card">
       <h2 style="margin:0 0 8px; font-size:16px;">Groups & Items</h2>
-      <p class="muted" style="margin:0 0 12px;">Each group can contain multiple groups with multiple items with a name, part number, and serial number.</p>
+      <p class="muted" style="margin:0 0 12px;">Each group can contain multiple groups with multiple items with optional tracking fields, notes, and photos.</p>
       <div id="groups" class="items"></div>
     </section>
     
@@ -226,6 +297,7 @@
               <th>Group</th>
               <th>Item</th>
               <th>Details</th>
+              <th>Completed By</th>
               <th>Action</th>
             </tr>
           </thead>
