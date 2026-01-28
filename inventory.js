@@ -1,6 +1,8 @@
 const $ = (s) => document.querySelector(s);
 const LAST_STATION_KEY = "dfd_inventory_station";
 const LAST_APPARATUS_KEY = "dfd_inventory_apparatus";
+const LAST_COMPLETED_BY_KEY = "dfd_inventory_completed_by";
+const COPIED_GROUP_KEY = "dfd_inventory_copied_group";
 const LOG_LIMIT = 200;
 
 let INVENTORY = {};
@@ -23,6 +25,19 @@ function noteSaved() {
   statusTimer = setTimeout(() => {
     setStatus("Changes are shared across stations.");
   }, 2000);
+}
+
+function completedBy() {
+  return ($("#inventoryWho")?.value || "").trim();
+}
+
+function requireCompletedBy(actionLabel = "make changes") {
+  const name = completedBy();
+  if (!name) {
+    setStatus(`Completed By is required to ${actionLabel}.`, true);
+    return false;
+  }
+  return true;
 }
 
 async function saveInventory() {
@@ -61,6 +76,10 @@ function apparatusId() {
   return ($("#apparatus")?.value || "").trim();
 }
 
+function canEdit() {
+  return Boolean(completedBy());
+}
+
 function ensureInventoryPath() {
   const station = stationId();
   const apparatus = apparatusId();
@@ -80,7 +99,15 @@ function currentGroups() {
 function normalizeGroup(group) {
   if (!Array.isArray(group.items)) group.items = [];
   if (!Array.isArray(group.groups)) group.groups = [];
+  if (!Array.isArray(group.photos)) group.photos = [];
+  if (group.notes === undefined) group.notes = null;
+  group.items.forEach(normalizeItem);
   return group;
+}
+
+function normalizeItem(item) {
+  if (!Array.isArray(item.photos)) item.photos = [];
+  return item;
 }
 
 function normalizeGroupTree(groups) {
@@ -193,14 +220,17 @@ function renderGroups() {
   const station = stationId();
   const apparatus = apparatusId();
   const addBtn = $("#addGroupBtn");
+  const pasteBtn = $("#pasteGroupBtn");
   if (!station || !apparatus) {
     if (addBtn) addBtn.disabled = true;
+    if (pasteBtn) pasteBtn.disabled = true;
     container.innerHTML = `<div class="empty">Select a station and apparatus to start building inventory groups.</div>`;
       renderApparatusSheet([]);
     return;
   }
 
-  if (addBtn) addBtn.disabled = false;
+  if (addBtn) addBtn.disabled = !canEdit();
+  if (pasteBtn) pasteBtn.disabled = !canEdit() || !localStorage.getItem(COPIED_GROUP_KEY);
 
   const groups = currentGroups();
   normalizeGroupTree(groups);
@@ -214,7 +244,11 @@ function renderGroups() {
     container.appendChild(card);
   });
 
-  setStatus("Changes are shared across stations.");
+ if (!canEdit()) {
+    setStatus("Completed By is required to edit inventory.", true);
+  } else {
+    setStatus("Changes are shared across stations.");
+  }
   renderApparatusSheet(groups);
 }
 
@@ -223,7 +257,8 @@ function buildGroupCard(group, depth) {
   card.className = "group-card";
   card.dataset.groupId = group.id;
   card.dataset.depth = String(depth);
-
+  const editLocked = !canEdit();
+  
   const header = document.createElement("div");
   header.className = "group-header";
 
@@ -231,22 +266,50 @@ function buildGroupCard(group, depth) {
   nameInput.className = "group-name";
   nameInput.placeholder = "Group name";
   nameInput.value = group.name || "";
-
+  nameInput.disabled = editLocked;
+  
   const actions = document.createElement("div");
   actions.className = "group-actions";
+
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "btn ghost";
+  copyBtn.dataset.action = "copy-group";
+  copyBtn.textContent = "Copy Group";
+
+  const notesBtn = document.createElement("button");
+  notesBtn.type = "button";
+  notesBtn.className = "btn ghost";
+  notesBtn.dataset.action = "toggle-notes";
+  notesBtn.textContent = group.notes !== null ? "Edit Notes" : "Add Notes";
+
+  const photoBtn = document.createElement("button");
+  photoBtn.type = "button";
+  photoBtn.className = "btn ghost";
+  photoBtn.dataset.action = "add-group-photo";
+  photoBtn.textContent = "Add Photo";
 
   const addSubgroupBtn = document.createElement("button");
   addSubgroupBtn.type = "button";
   addSubgroupBtn.className = "btn secondary";
   addSubgroupBtn.dataset.action = "add-subgroup";
   addSubgroupBtn.textContent = "Add Subgroup";
-
+  addSubgroupBtn.disabled = editLocked;
+  
   const removeBtn = document.createElement("button");
   removeBtn.type = "button";
   removeBtn.className = "btn danger";
   removeBtn.dataset.action = "remove-group";
   removeBtn.textContent = "Remove Group";
+  removeBtn.disabled = editLocked;
 
+  copyBtn.disabled = editLocked;
+  notesBtn.disabled = editLocked;
+  photoBtn.disabled = editLocked;
+
+  actions.appendChild(copyBtn);
+  actions.appendChild(notesBtn);
+  actions.appendChild(photoBtn);
   actions.appendChild(addSubgroupBtn);
   actions.appendChild(removeBtn);
 
@@ -263,36 +326,138 @@ function buildGroupCard(group, depth) {
     itemsWrap.appendChild(empty);
   } else {
     group.items.forEach((item) => {
+   const cardRow = document.createElement("div");
+      cardRow.className = "item-card";
+      cardRow.dataset.itemId = item.id;
+      
       const row = document.createElement("div");
       row.className = "item-row";
-      row.dataset.itemId = item.id;
-
+      
       const name = document.createElement("input");
       name.className = "item-name";
       name.placeholder = "Item name";
       name.value = item.name || "";
-
+      name.disabled = editLocked;
+      
       const part = document.createElement("input");
       part.className = "item-part";
       part.placeholder = "Part #";
       part.value = item.partNumber || "";
-
-      const serial = document.createElement("input");
-      serial.className = "item-serial";
-      serial.placeholder = "Serial #";
-      serial.value = item.serialNumber || "";
-
+      part.disabled = editLocked;
+      
       const removeItem = document.createElement("button");
       removeItem.type = "button";
       removeItem.className = "btn ghost";
       removeItem.dataset.action = "remove-item";
       removeItem.textContent = "Remove";
+      removeItem.disabled = editLocked;
 
       row.appendChild(name);
       row.appendChild(part);
-      row.appendChild(serial);
       row.appendChild(removeItem);
-      itemsWrap.appendChild(row);
+      cardRow.appendChild(row);
+
+      const extraFields = document.createElement("div");
+      extraFields.className = "item-extra-fields";
+
+      if (item.serialNumber !== undefined) {
+        const serial = document.createElement("input");
+        serial.className = "item-serial";
+        serial.placeholder = "Serial #";
+        serial.value = item.serialNumber || "";
+        serial.disabled = editLocked;
+        extraFields.appendChild(serial);
+      }
+
+      if (item.expirationDate !== undefined) {
+        const expiration = document.createElement("input");
+        expiration.type = "date";
+        expiration.className = "item-expiration";
+        expiration.value = item.expirationDate || "";
+        expiration.disabled = editLocked;
+        extraFields.appendChild(expiration);
+      }
+
+      if (item.departmentId !== undefined) {
+        const dept = document.createElement("input");
+        dept.className = "item-department";
+        dept.placeholder = "Department ID";
+        dept.value = item.departmentId || "";
+        dept.disabled = editLocked;
+        extraFields.appendChild(dept);
+      }
+
+      if (item.quantity !== undefined) {
+        const qty = document.createElement("input");
+        qty.type = "number";
+        qty.min = "0";
+        qty.step = "1";
+        qty.className = "item-quantity";
+        qty.placeholder = "Quantity";
+        qty.value = item.quantity ?? "";
+        qty.disabled = editLocked;
+        extraFields.appendChild(qty);
+      }
+
+      if (extraFields.children.length) {
+        cardRow.appendChild(extraFields);
+      }
+
+      const actionRow = document.createElement("div");
+      actionRow.className = "item-extra-actions";
+
+      const addSerialBtn = document.createElement("button");
+      addSerialBtn.type = "button";
+      addSerialBtn.className = "btn ghost";
+      addSerialBtn.dataset.action = "add-item-field";
+      addSerialBtn.dataset.field = "serialNumber";
+      addSerialBtn.textContent = "Add Serial #";
+      addSerialBtn.disabled = editLocked || item.serialNumber !== undefined;
+
+      const addExpirationBtn = document.createElement("button");
+      addExpirationBtn.type = "button";
+      addExpirationBtn.className = "btn ghost";
+      addExpirationBtn.dataset.action = "add-item-field";
+      addExpirationBtn.dataset.field = "expirationDate";
+      addExpirationBtn.textContent = "Add Expiration";
+      addExpirationBtn.disabled = editLocked || item.expirationDate !== undefined;
+
+      const addDeptBtn = document.createElement("button");
+      addDeptBtn.type = "button";
+      addDeptBtn.className = "btn ghost";
+      addDeptBtn.dataset.action = "add-item-field";
+      addDeptBtn.dataset.field = "departmentId";
+      addDeptBtn.textContent = "Add Dept ID";
+      addDeptBtn.disabled = editLocked || item.departmentId !== undefined;
+
+      const addQtyBtn = document.createElement("button");
+      addQtyBtn.type = "button";
+      addQtyBtn.className = "btn ghost";
+      addQtyBtn.dataset.action = "add-item-field";
+      addQtyBtn.dataset.field = "quantity";
+      addQtyBtn.textContent = "Add Qty";
+      addQtyBtn.disabled = editLocked || item.quantity !== undefined;
+
+      const addItemPhotoBtn = document.createElement("button");
+      addItemPhotoBtn.type = "button";
+      addItemPhotoBtn.className = "btn ghost";
+      addItemPhotoBtn.dataset.action = "add-item-photo";
+      addItemPhotoBtn.textContent = "Add Photo";
+      addItemPhotoBtn.disabled = editLocked;
+
+      actionRow.appendChild(addSerialBtn);
+      actionRow.appendChild(addExpirationBtn);
+      actionRow.appendChild(addDeptBtn);
+      actionRow.appendChild(addQtyBtn);
+      actionRow.appendChild(addItemPhotoBtn);
+
+      cardRow.appendChild(actionRow);
+
+      if (item.photos?.length) {
+        cardRow.appendChild(renderPhotoGrid(item.photos, "item", item.id, group.id));
+      }
+
+      itemsWrap.appendChild(cardRow);
     });
   }
 
@@ -301,10 +466,24 @@ function buildGroupCard(group, depth) {
   addItemBtn.className = "btn secondary";
   addItemBtn.dataset.action = "add-item";
   addItemBtn.textContent = "Add Item";
+  addItemBtn.disabled = editLocked;
 
   card.appendChild(header);
   card.appendChild(itemsWrap);
   card.appendChild(addItemBtn);
+
+  if (group.notes !== null) {
+    const notes = document.createElement("textarea");
+    notes.className = "group-notes note-area";
+    notes.placeholder = "Group notes";
+    notes.value = group.notes || "";
+    notes.disabled = editLocked;
+    card.appendChild(notes);
+  }
+
+  if (group.photos?.length) {
+    card.appendChild(renderPhotoGrid(group.photos, "group", group.id));
+  }
 
   if (group.groups.length) {
     const subgroupWrap = document.createElement("div");
@@ -319,19 +498,23 @@ function buildGroupCard(group, depth) {
 }
 
 function addGroup() {
+  if (!requireCompletedBy("add groups")) return;
   const path = ensureInventoryPath();
   if (!path) return;
   path.groups.push({
     id: createId(),
     name: "New Group",
     items: [],
-    groups: []
+    groups: [],
+    notes: null,
+    photos: []
   });
   queueSave();
   renderGroups();
 }
 
 function removeGroup(groupId) {
+  if (!requireCompletedBy("remove groups")) return;
   const groups = currentGroups();
     normalizeGroupTree(groups);
   if (removeGroupById(groups, groupId)) {
@@ -359,6 +542,7 @@ function findGroupById(groups, groupId) {
 }
 
 function addSubgroup(groupId) {
+  if (!requireCompletedBy("add subgroups")) return
   const groups = currentGroups();
   normalizeGroupTree(groups);
   const parent = findGroupById(groups, groupId);
@@ -367,13 +551,16 @@ function addSubgroup(groupId) {
     id: createId(),
     name: "New Subgroup",
     items: [],
-    groups: []
+    groups: [],
+    notes: null,
+    photos: []
   });
  queueSave();
   renderGroups();
 }
 
 async function addItem(groupId) {
+  if (!requireCompletedBy("add items")) return;
   const groups = currentGroups();
   normalizeGroupTree(groups);
   const group = findGroupById(groups, groupId);
@@ -382,7 +569,7 @@ async function addItem(groupId) {
     id: createId(),
     name: "",
     partNumber: "",
-    serialNumber: ""
+    photos: []
   };
   group.items.push(item);
   queueSave();
@@ -391,6 +578,7 @@ async function addItem(groupId) {
 }
 
 async function removeItem(groupId, itemId) {
+  if (!requireCompletedBy("remove items")) return;
   const groups = currentGroups();
   normalizeGroupTree(groups);
   const group = findGroupById(groups, groupId);
@@ -405,6 +593,7 @@ async function removeItem(groupId, itemId) {
 }
 
 function updateGroupName(groupId, value) {
+  if (!requireCompletedBy("edit groups")) return;
   const groups = currentGroups();
   normalizeGroupTree(groups);
   const group = findGroupById(groups, groupId);
@@ -415,6 +604,7 @@ function updateGroupName(groupId, value) {
 
 function updateItemField(groupId, itemId, field, value) {
   const groups = currentGroups();
+  if (!requireCompletedBy("edit items")) return;
   normalizeGroupTree(groups);
   const group = findGroupById(groups, groupId);
   if (!group) return;
@@ -424,7 +614,200 @@ function updateItemField(groupId, itemId, field, value) {
   queueSave();
 }
 
-  async function handleContainerClick(event) {
+ function addItemField(groupId, itemId, field) {
+  if (!requireCompletedBy("add item fields")) return;
+  const groups = currentGroups();
+  normalizeGroupTree(groups);
+  const group = findGroupById(groups, groupId);
+  if (!group) return;
+  const item = group.items.find((i) => i.id === itemId);
+  if (!item || item[field] !== undefined) return;
+  item[field] = field === "quantity" ? 0 : "";
+  queueSave();
+  renderGroups();
+}
+
+function toggleGroupNotes(groupId) {
+  if (!requireCompletedBy("add notes")) return;
+  const groups = currentGroups();
+  normalizeGroupTree(groups);
+  const group = findGroupById(groups, groupId);
+  if (!group) return;
+  if (group.notes === null) {
+    group.notes = "";
+  }
+  queueSave();
+  renderGroups();
+}
+
+function setGroupNotes(groupId, value) {
+  if (!requireCompletedBy("edit notes")) return;
+  const groups = currentGroups();
+  normalizeGroupTree(groups);
+  const group = findGroupById(groups, groupId);
+  if (!group) return;
+  group.notes = value;
+  queueSave();
+}
+
+function renderPhotoGrid(photos, kind, ownerId, groupId = null) {
+  const wrap = document.createElement("div");
+  wrap.className = "photo-grid";
+  photos.forEach((photo) => {
+    const card = document.createElement("div");
+    card.className = "photo-card";
+    const img = document.createElement("img");
+    img.src = photo.url;
+    img.alt = photo.name || "Inventory photo";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "photo-remove";
+    remove.textContent = "×";
+    remove.dataset.action = "remove-photo";
+    remove.dataset.photoId = photo.id;
+    remove.dataset.kind = kind;
+    remove.dataset.ownerId = ownerId;
+    if (groupId) remove.dataset.groupId = groupId;
+    remove.disabled = !canEdit();
+    card.appendChild(img);
+    card.appendChild(remove);
+    wrap.appendChild(card);
+  });
+  return wrap;
+}
+
+async function pickPhotos() {
+  if (!requireCompletedBy("add photos")) return [];
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.multiple = true;
+    input.addEventListener("change", () => {
+      const files = Array.from(input.files || []);
+      resolve(files);
+    });
+    input.click();
+  });
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function addGroupPhotos(groupId) {
+  if (!requireCompletedBy("add group photos")) return;
+  const groups = currentGroups();
+  normalizeGroupTree(groups);
+  const group = findGroupById(groups, groupId);
+  if (!group) return;
+  const files = await pickPhotos();
+  if (!files.length) return;
+  for (const file of files) {
+    const url = await readFileAsDataUrl(file);
+    group.photos.push({ id: createId(), url, name: file.name });
+  }
+  queueSave();
+  renderGroups();
+}
+
+async function addItemPhotos(groupId, itemId) {
+  if (!requireCompletedBy("add item photos")) return;
+  const groups = currentGroups();
+  normalizeGroupTree(groups);
+  const group = findGroupById(groups, groupId);
+  if (!group) return;
+  const item = group.items.find((entry) => entry.id === itemId);
+  if (!item) return;
+  const files = await pickPhotos();
+  if (!files.length) return;
+  for (const file of files) {
+    const url = await readFileAsDataUrl(file);
+    item.photos.push({ id: createId(), url, name: file.name });
+  }
+  queueSave();
+  renderGroups();
+}
+
+function removePhoto(kind, ownerId, photoId, groupId = null) {
+  if (!requireCompletedBy("remove photos")) return;
+  const groups = currentGroups();
+  normalizeGroupTree(groups);
+  if (kind === "group") {
+    const group = findGroupById(groups, ownerId);
+    if (!group) return;
+    group.photos = group.photos.filter((photo) => photo.id !== photoId);
+  } else if (kind === "item") {
+    const group = groupId ? findGroupById(groups, groupId) : null;
+    const item = group?.items.find((entry) => entry.id === ownerId);
+    if (!item) return;
+    item.photos = item.photos.filter((photo) => photo.id !== photoId);
+  }
+  queueSave();
+  renderGroups();
+}
+
+function copyGroup(groupId) {
+  if (!requireCompletedBy("copy groups")) return;
+  const groups = currentGroups();
+  normalizeGroupTree(groups);
+  const group = findGroupById(groups, groupId);
+  if (!group) return;
+  const payload = JSON.stringify(group);
+  localStorage.setItem(COPIED_GROUP_KEY, payload);
+  setStatus(`Copied "${group.name || "group"}" to clipboard.`);
+  renderGroups();
+}
+
+function cloneGroup(group) {
+  return {
+    id: createId(),
+    name: group.name || "",
+    notes: group.notes ?? null,
+    photos: (group.photos || []).map((photo) => ({
+      id: createId(),
+      url: photo.url,
+      name: photo.name || ""
+    })),
+    items: (group.items || []).map((item) => ({
+      id: createId(),
+      name: item.name || "",
+      partNumber: item.partNumber || "",
+      serialNumber: item.serialNumber,
+      expirationDate: item.expirationDate,
+      departmentId: item.departmentId,
+      quantity: item.quantity,
+      photos: (item.photos || []).map((photo) => ({
+        id: createId(),
+        url: photo.url,
+        name: photo.name || ""
+      }))
+    })),
+    groups: (group.groups || []).map((child) => cloneGroup(child))
+  };
+}
+
+function pasteGroup() {
+  if (!requireCompletedBy("paste groups")) return;
+  const payload = localStorage.getItem(COPIED_GROUP_KEY);
+  if (!payload) {
+    setStatus("No copied group available.", true);
+    return;
+  }
+  const path = ensureInventoryPath();
+  if (!path) return;
+  const stored = JSON.parse(payload);
+  path.groups.push(cloneGroup(stored));
+  queueSave();
+  renderGroups();
+}
+
+async function handleContainerClick(event) {
   const actionEl = event.target.closest("[data-action]");
   if (!actionEl) return;
   const action = actionEl.dataset.action;
@@ -435,8 +818,33 @@ function updateItemField(groupId, itemId, field, value) {
   await addItem(groupId);
   }
 
+  if (action === "add-item-field" && groupId) {
+    const itemRow = actionEl.closest(".item-card");
+    const itemId = itemRow?.dataset.itemId;
+    const field = actionEl.dataset.field;
+    if (itemId && field) addItemField(groupId, itemId, field);
+  }
+
+  if (action === "add-item-photo" && groupId) {
+    const itemRow = actionEl.closest(".item-card");
+    const itemId = itemRow?.dataset.itemId;
+    if (itemId) await addItemPhotos(groupId, itemId);
+  }
+
   if (action === "add-subgroup" && groupId) {
     addSubgroup(groupId);
+  }
+
+  if (action === "copy-group" && groupId) {
+    copyGroup(groupId);
+  }
+
+  if (action === "toggle-notes" && groupId) {
+    toggleGroupNotes(groupId);
+  }
+
+  if (action === "add-group-photo" && groupId) {
+    await addGroupPhotos(groupId);
   }
   
   if (action === "remove-group" && groupId) {
@@ -445,9 +853,17 @@ function updateItemField(groupId, itemId, field, value) {
   }
 
   if (action === "remove-item" && groupId) {
-    const itemRow = actionEl.closest(".item-row");
+    const itemRow = actionEl.closest(".item-card");
     const itemId = itemRow?.dataset.itemId;
     if (itemId) await removeItem(groupId, itemId);
+  }
+  
+  if (action === "remove-photo") {
+    const photoId = actionEl.dataset.photoId;
+    const kind = actionEl.dataset.kind;
+    const ownerId = actionEl.dataset.ownerId;
+    const groupRef = actionEl.dataset.groupId || null;
+    if (photoId && kind && ownerId) removePhoto(kind, ownerId, photoId, groupRef);
   }
 }
 
@@ -462,8 +878,13 @@ function handleContainerInput(event) {
     return;
   }
 
-  const itemRow = target.closest(".item-row");
-  const itemId = itemRow?.dataset.itemId;
+  if (target.classList.contains("group-notes")) {
+    setGroupNotes(groupId, target.value);
+    return;
+  }
+
+  const itemCard = target.closest(".item-card");
+  const itemId = itemCard?.dataset.itemId;
   if (!itemId) return;
 
   if (target.classList.contains("item-name")) {
@@ -472,6 +893,13 @@ function handleContainerInput(event) {
     updateItemField(groupId, itemId, "partNumber", target.value);
   } else if (target.classList.contains("item-serial")) {
     updateItemField(groupId, itemId, "serialNumber", target.value);
+    } else if (target.classList.contains("item-expiration")) {
+    updateItemField(groupId, itemId, "expirationDate", target.value);
+  } else if (target.classList.contains("item-department")) {
+    updateItemField(groupId, itemId, "departmentId", target.value);
+  } else if (target.classList.contains("item-quantity")) {
+    const value = target.value === "" ? "" : Number(target.value);
+    updateItemField(groupId, itemId, "quantity", Number.isNaN(value) ? "" : value);
   }
 }
 
@@ -484,6 +912,15 @@ async function init() {
 
   const stationSel = $("#station");
   const apSel = $("#apparatus");
+  const whoInput = $("#inventoryWho");
+
+  if (whoInput) {
+    whoInput.value = localStorage.getItem(LAST_COMPLETED_BY_KEY) || "";
+    whoInput.addEventListener("input", () => {
+      localStorage.setItem(LAST_COMPLETED_BY_KEY, completedBy());
+      renderGroups();
+    });
+  }
 
   stationSel?.addEventListener("change", async () => {
     localStorage.setItem(LAST_STATION_KEY, stationId());
@@ -500,6 +937,7 @@ async function init() {
   });
 
   $("#addGroupBtn")?.addEventListener("click", addGroup);
+  $("#pasteGroupBtn")?.addEventListener("click", pasteGroup);
 
   const container = $("#groups");
   container?.addEventListener("click", handleContainerClick);
@@ -538,6 +976,13 @@ function buildSheetGroup(group) {
   title.textContent = group.name || "Untitled Group";
   li.appendChild(title);
 
+  if (group.notes) {
+    const notes = document.createElement("div");
+    notes.className = "muted";
+    notes.textContent = group.notes;
+    li.appendChild(notes);
+  }
+
   if (group.items?.length) {
     const items = document.createElement("ul");
     items.className = "sheet-items";
@@ -565,7 +1010,10 @@ function formatItemLabel(item) {
   const name = item.name ? item.name.trim() : "Unnamed item";
   const part = item.partNumber ? `Part # ${item.partNumber}` : null;
   const serial = item.serialNumber ? `Serial # ${item.serialNumber}` : null;
-  const extras = [part, serial].filter(Boolean);
+  const exp = item.expirationDate ? `Exp ${item.expirationDate}` : null;
+  const dept = item.departmentId ? `Dept ID ${item.departmentId}` : null;
+  const qty = item.quantity !== undefined && item.quantity !== "" ? `Qty ${item.quantity}` : null;
+  const extras = [part, serial, exp, dept, qty].filter(Boolean);
   return extras.length ? `${name} (${extras.join(", ")})` : name;
 }
 
@@ -585,7 +1033,8 @@ async function logInventoryEvent(action, group, item) {
         itemId: item.id,
         itemName: item.name || "",
         partNumber: item.partNumber || "",
-        serialNumber: item.serialNumber || ""
+        serialNumber: item.serialNumber || "",
+        completedBy: completedBy()
       }
     });
     await loadInventoryLog();
@@ -602,7 +1051,7 @@ async function loadInventoryLog() {
     const res = await apiGet({ action: "getInventoryEvents", limit: LOG_LIMIT });
     const events = res.events || [];
     if (!events.length) {
-      table.innerHTML = `<tr><td colspan="7" class="muted">No inventory changes logged yet.</td></tr>`;
+      table.innerHTML = `<tr><td colspan="8" class="muted">No inventory changes logged yet.</td></tr>`;
       return;
     }
     events.forEach((event) => {
@@ -614,12 +1063,13 @@ async function loadInventoryLog() {
         <td>${event.groupName || event.groupId || ""}</td>
         <td>${event.itemName || event.itemId || ""}</td>
         <td>${formatItemMeta(event.partNumber, event.serialNumber)}</td>
+        <td>${event.completedBy || ""}</td>
         <td class="${event.action === "removed" ? "log-remove" : "log-add"}">${event.action || ""}</td>
       `;
       table.appendChild(row);
     });
   } catch (err) {
-    table.innerHTML = `<tr><td colspan="7" class="muted">Unable to load inventory log: ${err.message}</td></tr>`;
+    table.innerHTML = `<tr><td colspan="8" class="muted">Unable to load inventory log: ${err.message}</td></tr>`;
   }
 }
 
