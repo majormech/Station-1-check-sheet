@@ -21,3 +21,5 @@ CREATE TABLE IF NOT EXISTS inventory_item_events (
   action TEXT NOT NULL,
   occurred_at TEXT NOT NULL
 );
+
+ALTER TABLE inventory_item_events ADD COLUMN completed_by TEXT;
