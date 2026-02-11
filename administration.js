@@ -320,8 +320,90 @@ function closeCheckDetail_() {
   modal.classList.remove("show");
 }
 
+let RESOLVE_DIALOG_STATE = null;
+
+function closeResolveIssueModal_() {
+  const modal = $("#resolveIssueModal");
+  const text = $("#resolveIssueText");
+  const confirm = $("#resolveIssueConfirm");
+  if (text) text.value = "";
+  if (confirm) confirm.disabled = true;
+  if (modal) {
+    modal.setAttribute("aria-hidden", "true");
+    modal.classList.remove("show");
+  }
+}
+
+function openResolveIssueModal_(iss) {
+  const modal = $("#resolveIssueModal");
+  const prompt = $("#resolveIssuePrompt");
+  const text = $("#resolveIssueText");
+  const confirm = $("#resolveIssueConfirm");
+  const cancel = $("#resolveIssueCancel");
+
+  if (!modal || !prompt || !text || !confirm || !cancel) {
+    return Promise.resolve(null);
+  }
+
+  closeResolveIssueModal_();
+
+  prompt.textContent = `Describe how ${iss.apparatusId || "this apparatus"} issue was resolved:`;
+  const prefill = String(iss.bulletNote || "").trim();
+  if (prefill) text.value = prefill;
+  confirm.disabled = !(text.value || "").trim();
+
+  modal.setAttribute("aria-hidden", "false");
+  modal.classList.add("show");
+  setTimeout(() => text.focus(), 0);
+
+  return new Promise((resolve) => {
+    RESOLVE_DIALOG_STATE = { resolve };
+
+    const settle = (value) => {
+      if (!RESOLVE_DIALOG_STATE) return;
+      const done = RESOLVE_DIALOG_STATE.resolve;
+      RESOLVE_DIALOG_STATE = null;
+      closeResolveIssueModal_();
+      done(value);
+    };
+
+    confirm.onclick = () => {
+      const value = (text.value || "").trim();
+      if (!value) return;
+      settle(value);
+    };
+
+    cancel.onclick = () => settle(null);
+
+    text.oninput = () => {
+      confirm.disabled = !(text.value || "").trim();
+    };
+
+    text.onkeydown = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+        event.preventDefault();
+        if (!confirm.disabled) confirm.click();
+      }
+    };
+
+    modal.onclick = (event) => {
+      if (event.target?.id === "resolveIssueModal") settle(null);
+    };
+  });
+}
+
 function handleModalKeydown_(event) {
-  if (event.key === "Escape") closeCheckDetail_();
+   if (event.key !== "Escape") return;
+
+  if (RESOLVE_DIALOG_STATE) {
+    const done = RESOLVE_DIALOG_STATE.resolve;
+    RESOLVE_DIALOG_STATE = null;
+    closeResolveIssueModal_();
+    done(null);
+    return;
+  }
+
+  closeCheckDetail_();
 }
 
 /* ---------- Status ---------- */
@@ -497,10 +579,24 @@ function renderIssueRow_(iss) {
         const user = adminName();
         const status = wrap.querySelector(`select[data-issue="${CSS.escape(iss.issueId)}"]`).value;
         const ack = !!wrap.querySelector(`input[data-ack="${CSS.escape(iss.issueId)}"]`).checked;
+let resolutionNote = null;
+
+        if (status === "RESOLVED") {
+          resolutionNote = await openResolveIssueModal_(iss);
+          if (!resolutionNote) {
+            toast("Resolution canceled", 2200);
+            return;
+          }
+        }
 
         await apiPost({
           action: "updateIssue",
           issueId: iss.issueId,
+           changes: {
+            status,
+            acknowledged: ack,
+            ...(status === "RESOLVED" ? { resolutionNote } : {}),
+          },
           changes: { status, acknowledged: ack },
           user,
         });
