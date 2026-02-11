@@ -643,9 +643,16 @@ async function handlePost_(env, url, action, body, context) {
     const values = [];
 
     if (changes.status) {
+       const normalizedStatus = String(changes.status || "").trim().toUpperCase();
       fields.push("status = ?");
+      values.push(normalizedStatus);
       values.push(String(changes.status || "").trim().toUpperCase());
       fields.push("updated_at = ?");
+    if (normalizedStatus === "RESOLVED") {
+        const resolutionNote = String(changes.resolutionNote || "").trim();
+        if (!resolutionNote) return jsonError_(400, "Resolution note is required");
+        fields.push("bullet_note = ?");
+        values.push(resolutionNote);
       values.push(new Date().toISOString());
       if (String(changes.status || "").toUpperCase() === "RESOLVED") {
         fields.push("resolved_at = ?");
