@@ -708,6 +708,8 @@ async function handlePost_(env, url, action, body, context) {
   return jsonError_(400, "Unknown action");
 }
 
+}
+
 function requireDb_(env) {
   if (!env?.DB) throw new Error("Missing D1 binding (DB)");
   return env.DB;
