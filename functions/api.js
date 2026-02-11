@@ -82,7 +82,7 @@ async function handleGet_(env, url, action) {
     if (row?.data_json) {
       try {
         groups = JSON.parse(row.data_json) || [];
-      } catch {
+      } catch (err) {
         groups = [];
       }
     }
@@ -717,7 +717,7 @@ async function safeJson_(request) {
   try {
     if (!request.body) return {};
     return await request.json();
-  } catch {
+  } catch (err) {
     return {};
   }
 }
@@ -1046,7 +1046,7 @@ function safeJsonParse_(value) {
   if (!value) return null;
   try {
     return JSON.parse(value);
-  } catch {
+  } catch (err) {
     return null;
   }
 }
@@ -1329,7 +1329,7 @@ async function fetchSheetsAction_(env, action, params = {}) {
   let json;
   try {
     json = JSON.parse(text);
-  } catch {
+  } catch (err) {
     throw new Error(`Bad JSON from Sheets (${action}): ${text.slice(0, 160)}`);
   }
   if (!json.ok) throw new Error(json.error || `Sheets request failed (${action})`);
