@@ -453,6 +453,43 @@
       gap:6px;
     }
 
+     .modal-card.modal-sm{
+      max-width:520px;
+    }
+    .modal-field{
+      display:grid;
+      gap:6px;
+      margin-top:6px;
+    }
+    .modal-field label{
+      font-weight:800;
+      font-size:13px;
+    }
+    .modal-field textarea{
+      width:100%;
+      min-height:120px;
+      resize:vertical;
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:10px;
+      font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+    }
+    .modal-actions{
+      display:flex;
+      justify-content:flex-end;
+      gap:8px;
+      margin-top:12px;
+    }
+    .btn.btn-primary{
+      background:var(--brand);
+      color:#fff;
+      border-color:rgba(0,0,0,.2);
+    }
+    .btn[disabled]{
+      opacity:.55;
+      cursor:not-allowed;
+    }
+
     /* Responsive table stack */
     @media (max-width: 760px){
       table.grid thead{ display:none; }
@@ -595,6 +632,24 @@
         <button class="btn" id="checkDetailClose" type="button">Close</button>
       </div>
       <div id="checkDetailBody"></div>
+    </div>
+  </div>
+
+   <!-- Resolve Issue Modal -->
+  <div id="resolveIssueModal" class="modal" aria-hidden="true">
+    <div class="modal-card modal-sm" role="dialog" aria-modal="true" aria-labelledby="resolveIssueTitle">
+      <div class="modal-head">
+        <h3 id="resolveIssueTitle" style="margin:0">Resolve Active Issue</h3>
+      </div>
+      <div class="note" id="resolveIssuePrompt">Enter how this issue was resolved.</div>
+      <div class="modal-field">
+        <label for="resolveIssueText">Resolution details (required)</label>
+        <textarea id="resolveIssueText" placeholder="Describe how the issue was resolved..."></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="resolveIssueCancel" type="button">Cancel</button>
+        <button class="btn btn-primary" id="resolveIssueConfirm" type="button" disabled>Mark Resolved</button>
+      </div>
     </div>
   </div>
 
